@@ -3,6 +3,7 @@ from dateutil.relativedelta import relativedelta
 from odoo import api, fields, models, _, Command
 from odoo.exceptions import UserError, ValidationError
 from odoo.tools import float_compare, float_is_zero
+from odoo.tools.misc import format_date
 
 
 class StaffLoan(models.Model):
@@ -115,6 +116,20 @@ class StaffLoan(models.Model):
         tracking=True,
         domain="[('type', 'in', ('cash', 'bank', 'general')), ('company_id', '=', company_id)]",
     )
+    disbursement_account_id = fields.Many2one(
+        "account.account",
+        string="Disbursement Credit Account",
+        tracking=True,
+        domain="[('company_ids', 'in', company_id)]",
+        help="Credit account used when posting the staff loan disbursement. This keeps the journal independent from a default account.",
+    )
+    collection_account_id = fields.Many2one(
+        "account.account",
+        string="Collection Debit Account",
+        tracking=True,
+        domain="[('company_ids', 'in', company_id)]",
+        help="Debit account used by generated staff loan repayment entries. This keeps the collection journal independent from a default account.",
+    )
     writeoff_account_id = fields.Many2one(
         "account.account",
         string="Write-Off Account",
@@ -163,6 +178,35 @@ class StaffLoan(models.Model):
             if vals.get("name", "/") == "/":
                 vals["name"] = self.env["ir.sequence"].next_by_code("staff.loan") or "/"
         return super().create(vals_list)
+
+    @api.model
+    def default_get(self, fields_list):
+        values = super().default_get(fields_list)
+        accounting_fields = {
+            "receivable_account_id",
+            "interest_income_account_id",
+            "disbursement_journal_id",
+            "collection_journal_id",
+            "disbursement_account_id",
+            "collection_account_id",
+            "writeoff_account_id",
+        }
+        if not accounting_fields.intersection(fields_list):
+            return values
+        previous_loan = self.search([
+            ("company_id", "=", self.env.company.id),
+            ("receivable_account_id", "!=", False),
+            ("interest_income_account_id", "!=", False),
+            ("disbursement_journal_id", "!=", False),
+            ("collection_journal_id", "!=", False),
+            ("disbursement_account_id", "!=", False),
+            ("collection_account_id", "!=", False),
+        ], limit=1)
+        if previous_loan:
+            for field_name in accounting_fields:
+                if field_name in fields_list and previous_loan[field_name]:
+                    values[field_name] = previous_loan[field_name].id
+        return values
 
     @api.constrains("loan_amount", "duration", "interest_rate")
     def _check_positive_values(self):
@@ -217,7 +261,14 @@ class StaffLoan(models.Model):
     def _check_company_consistency(self):
         for loan in self:
             company = loan.company_id
-            for account in loan.receivable_account_id | loan.interest_income_account_id | loan.writeoff_account_id:
+            accounts = (
+                loan.receivable_account_id
+                | loan.interest_income_account_id
+                | loan.disbursement_account_id
+                | loan.collection_account_id
+                | loan.writeoff_account_id
+            )
+            for account in accounts:
                 if account and company not in account.company_ids:
                     raise UserError(_("Account %(account)s is not available for %(company)s.", account=account.display_name, company=company.display_name))
             for journal in loan.disbursement_journal_id | loan.collection_journal_id:
@@ -242,6 +293,10 @@ class StaffLoan(models.Model):
                 raise UserError(_("Set the Disbursement Journal."))
             if not loan.collection_journal_id:
                 raise UserError(_("Set the Collection Journal."))
+            if not loan.disbursement_account_id:
+                raise UserError(_("Set the Disbursement Credit Account."))
+            if not loan.collection_account_id:
+                raise UserError(_("Set the Collection Debit Account."))
         self._check_company_consistency()
 
     def action_compute_schedule(self):
@@ -289,7 +344,7 @@ class StaffLoan(models.Model):
 
     def action_close_wizard(self):
         self.ensure_one()
-        if self.state not in ("running", "disbursed"):
+        if self.state != "running":
             raise UserError(_("Only running loans can be closed."))
         return {
             "type": "ir.actions.act_window",
@@ -299,6 +354,18 @@ class StaffLoan(models.Model):
             "views": [(False, "form")],
             "context": {"default_loan_id": self.id},
         }
+
+    def action_cancel(self):
+        self.ensure_one()
+        if self.state != "running":
+            raise UserError(_("Only running loans can be cancelled directly."))
+        (
+            self.disbursement_move_id
+            | self.line_ids.generated_move_ids
+            | self.line_ids.collection_move_ids
+        ).filtered(lambda move: move.state != "cancel")._unlink_or_reverse()
+        self.state = "cancelled"
+        self.message_post(body=_("Loan cancelled."))
 
     def action_cancel_wizard(self):
         self.ensure_one()
@@ -321,11 +388,12 @@ class StaffLoan(models.Model):
             "name": _("Staff Loan Entries"),
             "res_model": "account.move",
             "view_mode": "list,form",
+            "views": [
+                (self.env.ref("tha_staff_loan.view_staff_loan_account_move_list").id, "list"),
+                (False, "form"),
+            ],
             "domain": [("id", "in", moves.ids)],
-            "context": {
-                "search_default_staff_loan_id": self.id,
-                "default_staff_loan_id": self.id,
-            },
+            "context": {"default_staff_loan_id": self.id},
         }
 
     def action_open_documents(self):
@@ -363,9 +431,6 @@ class StaffLoan(models.Model):
         self._require_accounting_settings()
         self._require_schedule()
         partner = self.employee_id.work_contact_id or self.employee_id.user_id.partner_id
-        liquidity_account = journal.default_account_id
-        if not liquidity_account:
-            raise UserError(_("Journal %(journal)s has no default account.", journal=journal.display_name))
         move = self.env["account.move"].with_company(self.company_id).create({
             "company_id": self.company_id.id,
             "date": date,
@@ -381,7 +446,7 @@ class StaffLoan(models.Model):
                     partner=partner,
                 ),
                 self._make_move_line_vals(
-                    liquidity_account,
+                    self.disbursement_account_id,
                     credit=self.loan_amount,
                     name=_("%s - Paid to Staff") % self.name,
                     partner=partner,
@@ -406,7 +471,7 @@ class StaffLoan(models.Model):
                     raise UserError(_("Repayment entries already exist for installment due on %(date)s.", date=line.due_date))
             for line in loan.line_ids:
                 line._create_repayment_move(
-                    line.due_date,
+                    line.due_date + relativedelta(day=31),
                     loan.collection_journal_id,
                     line.principal,
                     line.interest,
@@ -558,9 +623,6 @@ class StaffLoanLine(models.Model):
             raise UserError(_("Collection amount must be positive."))
         if float_compare(amount, self.open_amount, precision_rounding=self.currency_id.rounding) > 0:
             raise UserError(_("Collection amount cannot exceed the installment open amount."))
-        liquidity_account = journal.default_account_id
-        if not liquidity_account:
-            raise UserError(_("Journal %(journal)s has no default account.", journal=journal.display_name))
         principal_amount, interest_amount = self._split_collection_amount(amount)
         partner = loan.employee_id.work_contact_id or loan.employee_id.user_id.partner_id
 
@@ -583,7 +645,7 @@ class StaffLoanLine(models.Model):
         remaining_interest = max(self.interest - self.paid_interest, 0.0)
         if not float_is_zero(remaining_principal + remaining_interest, precision_rounding=self.currency_id.rounding):
             self._create_repayment_move(
-                self.due_date,
+                self.due_date + relativedelta(day=31),
                 loan.collection_journal_id,
                 remaining_principal,
                 remaining_interest,
@@ -615,15 +677,13 @@ class StaffLoanLine(models.Model):
         amount = principal_amount + interest_amount
         if float_is_zero(amount, precision_rounding=self.currency_id.rounding):
             return self.env["account.move"]
-        liquidity_account = journal.default_account_id
-        if not liquidity_account:
-            raise UserError(_("Journal %(journal)s has no default account.", journal=journal.display_name))
         partner = partner or loan.employee_id.work_contact_id or loan.employee_id.user_id.partner_id
+        date_label = format_date(self.env, self.due_date, date_format="MM/y")
         lines = [
             loan._make_move_line_vals(
-                liquidity_account,
+                loan.collection_account_id,
                 debit=amount,
-                name=_("%s - Staff Loan Repayment") % loan.name,
+                name=_("%s - Staff Loan Collection %s") % (loan.name, date_label),
                 partner=partner,
             )
         ]
@@ -631,21 +691,21 @@ class StaffLoanLine(models.Model):
             lines.append(loan._make_move_line_vals(
                 loan.receivable_account_id,
                 credit=principal_amount,
-                name=_("%s - Principal Repayment") % loan.name,
+                name=_("%s - Principal %s") % (loan.name, date_label),
                 partner=partner,
             ))
         if interest_amount:
             lines.append(loan._make_move_line_vals(
                 loan.interest_income_account_id,
                 credit=interest_amount,
-                name=_("%s - Interest Income") % loan.name,
+                name=_("%s - Interest %s") % (loan.name, date_label),
                 partner=partner,
             ))
         return self.env["account.move"].with_company(loan.company_id).create({
             "company_id": loan.company_id.id,
             "date": date,
             "journal_id": journal.id,
-            "ref": _("%(loan)s - Repayment %(date)s", loan=reference or loan.name, date=self.due_date),
+            "ref": _("%(loan)s - Principal & Interest %(date)s", loan=reference or loan.name, date=date_label),
             "staff_loan_id": loan.id,
             "staff_loan_line_id": self.id,
             "is_staff_loan_repayment_move": True,

@@ -2,7 +2,7 @@ from dateutil.relativedelta import relativedelta
 
 from odoo import api, fields, models, _, Command
 from odoo.exceptions import UserError
-from odoo.tools import float_compare
+from odoo.tools import float_compare, format_date
 
 
 class StaffLoanComputeWizard(models.TransientModel):
@@ -171,7 +171,7 @@ class StaffLoanDisburseWizard(models.TransientModel):
     def _compute_preview(self):
         for wizard in self:
             loan = wizard.loan_id
-            account = wizard.journal_id.default_account_id
+            account = loan.disbursement_account_id
             if loan and account:
                 wizard.preview = (
                     f"Dr {loan.receivable_account_id.display_name}: {loan.currency_id.format(loan.loan_amount)}\n"
@@ -238,17 +238,19 @@ class StaffLoanCloseWizard(models.TransientModel):
     def action_close(self):
         self.ensure_one()
         loan = self.loan_id
-        rounding = loan.currency_id.rounding
-        if float_compare(loan.outstanding_balance, 0.0, precision_rounding=rounding) != 0:
-            raise UserError(_("The loan still has an outstanding balance."))
-        if loan.line_ids.filtered(lambda line: line.state in ("open", "partial", "overdue")):
-            raise UserError(_("All installments must be paid before closing."))
+        loan.line_ids.generated_move_ids.filtered(
+            lambda move: move.staff_loan_line_id.due_date > self.close_date and move.state == "draft"
+        ).unlink()
         loan.write({
             "state": "closed",
             "close_date": self.close_date,
             "close_remarks": self.remarks,
         })
-        loan.message_post(body=_("Loan closed on %(date)s. %(remarks)s", date=self.close_date, remarks=self.remarks or ""))
+        loan.message_post(body=_(
+            "Closed on the %(date)s. %(remarks)s",
+            date=format_date(self.env, self.close_date),
+            remarks=self.remarks or "",
+        ))
         return {"type": "ir.actions.act_window_close"}
 
 

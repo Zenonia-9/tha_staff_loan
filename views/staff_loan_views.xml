@@ -21,19 +21,28 @@
         <field name="name">staff.loan.line.list</field>
         <field name="model">staff.loan.line</field>
         <field name="arch" type="xml">
-            <list decoration-success="state == 'paid'" decoration-warning="state == 'partial'" decoration-danger="state == 'overdue'">
-                <field name="sequence"/>
+            <list string="Staff Loan lines" decoration-info="not is_repayment_move_posted">
+                <field name="sequence" string="#" width="30px" optional="hide"/>
                 <field name="loan_id"/>
-                <field name="employee_id"/>
-                <field name="due_date"/>
-                <field name="principal" sum="Principal"/>
-                <field name="interest" sum="Interest"/>
-                <field name="payment" sum="Payment"/>
-                <field name="paid_amount" sum="Paid"/>
-                <field name="open_amount" sum="Open"/>
-                <field name="balance"/>
-                <field name="state" widget="badge" decoration-success="state == 'paid'" decoration-warning="state == 'partial'" decoration-danger="state == 'overdue'"/>
+                <field name="employee_id" optional="hide"/>
+                <field name="due_date" string="Date"/>
+                <field name="principal" string="Principals" sum="Total principals"/>
+                <field name="interest" string="Interests" sum="Total interests"/>
+                <field name="payment" string="Payments" sum="Total payments"/>
+                <field name="balance" string="Outstanding Balance"/>
             </list>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_account_move_list" model="ir.ui.view">
+        <field name="name">staff.loan.account.move.list</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account.view_move_tree"/>
+        <field name="mode">primary</field>
+        <field name="arch" type="xml">
+            <xpath expr="//list" position="attributes">
+                <attribute name="default_order">date,name,ref</attribute>
+            </xpath>
         </field>
     </record>
 
@@ -69,7 +78,8 @@
                     <button name="action_approve_wizard" string="Approve" type="object" class="btn-primary" invisible="state != 'draft'"/>
                     <button name="action_disburse_wizard" string="Disburse" type="object" class="btn-primary" invisible="state != 'approved'"/>
                     <button name="action_register_collection" string="Register Collection" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed')"/>
-                    <button name="action_close_wizard" string="Close Loan" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed')"/>
+                    <button name="action_close_wizard" string="Close Loan" type="object" class="btn-secondary" invisible="state != 'running'"/>
+                    <button name="action_cancel" string="Cancel" type="object" class="btn-secondary" invisible="state != 'running'"/>
                     <button name="action_cancel_wizard" string="Cancel" type="object" class="btn-secondary" invisible="state not in ('draft', 'approved')"/>
                     <field name="state" widget="statusbar" statusbar_visible="draft,approved,disbursed,running,closed"/>
                 </header>
@@ -113,19 +123,15 @@
                         </group>
                     </group>
                     <notebook>
-                        <page string="Repayment Schedule">
+                        <page string="Amortization schedule">
                             <field name="line_ids" readonly="1">
-                                <list decoration-success="state == 'paid'" decoration-warning="state == 'partial'" decoration-danger="state == 'overdue'">
-                                    <field name="sequence"/>
-                                    <field name="due_date"/>
-                                    <field name="principal"/>
-                                    <field name="interest"/>
-                                    <field name="payment"/>
-                                    <field name="balance"/>
-                                    <field name="paid_amount"/>
-                                    <field name="open_amount"/>
-                                    <field name="state" widget="badge" decoration-success="state == 'paid'" decoration-warning="state == 'partial'" decoration-danger="state == 'overdue'"/>
-                                    <button name="action_collect_wizard" string="Pay" type="object" class="btn-primary" invisible="state == 'paid' or parent.state not in ('running', 'disbursed')"/>
+                                <list decoration-info="not is_repayment_move_posted">
+                                    <field name="sequence" string="#" width="30px" optional="hide"/>
+                                    <field name="due_date" string="Date"/>
+                                    <field name="principal" string="Principals" sum="Total principals"/>
+                                    <field name="interest" string="Interests" sum="Total interests"/>
+                                    <field name="payment" string="Payments" sum="Total payments"/>
+                                    <field name="balance" string="Outstanding Balance"/>
                                 </list>
                             </field>
                         </page>
@@ -134,6 +140,8 @@
                                 <group>
                                     <field name="receivable_account_id" readonly="state not in ('draft', 'approved')"/>
                                     <field name="interest_income_account_id" readonly="state not in ('draft', 'approved')"/>
+                                    <field name="disbursement_account_id" readonly="state not in ('draft', 'approved')"/>
+                                    <field name="collection_account_id" readonly="state not in ('draft', 'approved')"/>
                                     <field name="writeoff_account_id" readonly="state not in ('draft', 'approved')"/>
                                 </group>
                                 <group>
@@ -191,5 +199,5 @@
 
     <menuitem id="menu_staff_loan_root" name="Staff Loans" parent="accountant.account_assets_liabilities_menu" sequence="63" groups="account.group_account_readonly"/>
     <menuitem id="menu_staff_loan" name="Staff Loans" parent="menu_staff_loan_root" action="action_staff_loan" sequence="10" groups="account.group_account_readonly"/>
-    <menuitem id="menu_staff_loan_lines" name="Installments" parent="menu_staff_loan_root" action="action_staff_loan_line" sequence="20" groups="account.group_account_readonly"/>
+    <menuitem id="menu_staff_loan_lines" name="Installments" parent="menu_staff_loan_root" action="action_staff_loan_line" sequence="20" groups="base.group_no_one"/>
 </odoo>
