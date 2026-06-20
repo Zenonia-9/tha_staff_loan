@@ -22,6 +22,7 @@ disbursement accounting, manual collections, documents, notes, and reports.
         "security/security.xml",
         "security/ir.model.access.csv",
         "data/sequence.xml",
+        "views/account_move_views.xml",
         "views/staff_loan_views.xml",
         "wizard/staff_loan_wizard_views.xml",
         "report/staff_loan_reports.xml",

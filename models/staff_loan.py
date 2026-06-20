@@ -542,6 +542,19 @@ class StaffLoanLine(models.Model):
     )
     is_repayment_move_posted = fields.Boolean(compute="_compute_is_repayment_move_posted")
 
+    @api.depends("loan_id.name", "sequence", "due_date", "open_amount", "currency_id")
+    def _compute_display_name(self):
+        for line in self:
+            date = format_date(self.env, line.due_date) if line.due_date else ""
+            amount = line.currency_id.format(line.open_amount) if line.currency_id else line.open_amount
+            line.display_name = _(
+                "%(loan)s - Installment #%(sequence)s - %(date)s - Open %(amount)s",
+                loan=line.loan_id.name or "",
+                sequence=line.sequence or 0,
+                date=date,
+                amount=amount,
+            )
+
     @api.depends("loan_id.line_ids", "due_date")
     def _compute_sequence(self):
         for loan in self.mapped("loan_id"):
