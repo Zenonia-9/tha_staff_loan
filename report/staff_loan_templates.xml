@@ -1,0 +1,124 @@
+<odoo>
+    <template id="staff_loan_report_base">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2><t t-out="title"/></h2>
+                        <table class="table table-sm">
+                            <tr><td><strong>Loan No.</strong></td><td><span t-field="o.name"/></td><td><strong>Staff</strong></td><td><span t-field="o.employee_id"/></td></tr>
+                            <tr><td><strong>Department</strong></td><td><span t-field="o.department_id"/></td><td><strong>Branch</strong></td><td><span t-field="o.branch_id"/></td></tr>
+                            <tr><td><strong>Loan Date</strong></td><td><span t-field="o.loan_date"/></td><td><strong>First Payment Date</strong></td><td><span t-field="o.first_payment_date"/></td></tr>
+                            <tr><td><strong>Loan Amount</strong></td><td><span t-field="o.loan_amount"/></td><td><strong>Total Interest</strong></td><td><span t-field="o.total_interest"/></td></tr>
+                            <tr><td><strong>Total Payment</strong></td><td><span t-field="o.total_payment"/></td><td><strong>Outstanding</strong></td><td><span t-field="o.outstanding_balance"/></td></tr>
+                            <tr><td><strong>Status</strong></td><td><span t-field="o.state"/></td><td><strong>Company</strong></td><td><span t-field="o.company_id"/></td></tr>
+                        </table>
+                        <t t-if="show_schedule">
+                            <h3>Repayment Schedule</h3>
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>#</th><th>Due Date</th><th class="text-end">Principal</th><th class="text-end">Interest</th><th class="text-end">Payment</th><th class="text-end">Balance</th><th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr t-foreach="o.line_ids" t-as="line">
+                                        <td><span t-field="line.sequence"/></td>
+                                        <td><span t-field="line.due_date"/></td>
+                                        <td class="text-end"><span t-field="line.principal"/></td>
+                                        <td class="text-end"><span t-field="line.interest"/></td>
+                                        <td class="text-end"><span t-field="line.payment"/></td>
+                                        <td class="text-end"><span t-field="line.balance"/></td>
+                                        <td><span t-field="line.state"/></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </t>
+                        <t t-if="show_collections">
+                            <h3>Collection History</h3>
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr><th>Date</th><th>Reference</th><th>Installment</th><th class="text-end">Amount</th><th>Status</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr t-foreach="o.line_ids.collection_move_ids" t-as="move">
+                                        <td><span t-field="move.date"/></td>
+                                        <td><span t-field="move.ref"/></td>
+                                        <td><span t-field="move.staff_loan_line_id.due_date"/></td>
+                                        <td class="text-end"><span t-field="move.amount_total"/></td>
+                                        <td><span t-field="move.state"/></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </t>
+                        <t t-if="show_closure">
+                            <h3>Closure</h3>
+                            <p><strong>Close Date:</strong> <span t-field="o.close_date"/></p>
+                            <p><strong>Remarks:</strong> <span t-field="o.close_remarks"/></p>
+                        </t>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+
+    <template id="report_staff_loan_agreement">
+        <t t-call="web.html_container">
+            <t t-set="title" t-value="'Staff Loan Agreement'"/>
+            <t t-set="show_schedule" t-value="False"/>
+            <t t-set="show_collections" t-value="False"/>
+            <t t-set="show_closure" t-value="False"/>
+            <t t-call="tha_staff_loan.staff_loan_report_base"/>
+        </t>
+    </template>
+
+    <template id="report_staff_loan_schedule">
+        <t t-call="web.html_container">
+            <t t-set="title" t-value="'Repayment Schedule'"/>
+            <t t-set="show_schedule" t-value="True"/>
+            <t t-set="show_collections" t-value="False"/>
+            <t t-set="show_closure" t-value="False"/>
+            <t t-call="tha_staff_loan.staff_loan_report_base"/>
+        </t>
+    </template>
+
+    <template id="report_staff_loan_statement">
+        <t t-call="web.html_container">
+            <t t-set="title" t-value="'Staff Loan Statement'"/>
+            <t t-set="show_schedule" t-value="True"/>
+            <t t-set="show_collections" t-value="True"/>
+            <t t-set="show_closure" t-value="False"/>
+            <t t-call="tha_staff_loan.staff_loan_report_base"/>
+        </t>
+    </template>
+
+    <template id="report_staff_loan_outstanding">
+        <t t-call="web.html_container">
+            <t t-set="title" t-value="'Outstanding Balance Report'"/>
+            <t t-set="show_schedule" t-value="True"/>
+            <t t-set="show_collections" t-value="False"/>
+            <t t-set="show_closure" t-value="False"/>
+            <t t-call="tha_staff_loan.staff_loan_report_base"/>
+        </t>
+    </template>
+
+    <template id="report_staff_loan_collection">
+        <t t-call="web.html_container">
+            <t t-set="title" t-value="'Collection History'"/>
+            <t t-set="show_schedule" t-value="False"/>
+            <t t-set="show_collections" t-value="True"/>
+            <t t-set="show_closure" t-value="False"/>
+            <t t-call="tha_staff_loan.staff_loan_report_base"/>
+        </t>
+    </template>
+
+    <template id="report_staff_loan_closure">
+        <t t-call="web.html_container">
+            <t t-set="title" t-value="'Loan Closure Report'"/>
+            <t t-set="show_schedule" t-value="True"/>
+            <t t-set="show_collections" t-value="True"/>
+            <t t-set="show_closure" t-value="True"/>
+            <t t-call="tha_staff_loan.staff_loan_report_base"/>
+        </t>
+    </template>
+</odoo>

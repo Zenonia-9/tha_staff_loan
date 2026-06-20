@@ -1,0 +1,9 @@
+<odoo>
+    <record id="seq_staff_loan" model="ir.sequence">
+        <field name="name">Staff Loan</field>
+        <field name="code">staff.loan</field>
+        <field name="prefix">SL/%(year)s/</field>
+        <field name="padding">4</field>
+        <field name="company_id" eval="False"/>
+    </record>
+</odoo>

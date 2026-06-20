@@ -1,0 +1,195 @@
+<odoo>
+    <record id="view_staff_loan_list" model="ir.ui.view">
+        <field name="name">staff.loan.list</field>
+        <field name="model">staff.loan</field>
+        <field name="arch" type="xml">
+            <list decoration-info="state == 'draft'" decoration-success="state in ('running', 'disbursed')" decoration-muted="state in ('closed', 'cancelled')">
+                <field name="name"/>
+                <field name="employee_id"/>
+                <field name="department_id" optional="show"/>
+                <field name="loan_date"/>
+                <field name="loan_amount" sum="Total Loan Amount"/>
+                <field name="total_interest" sum="Total Interest"/>
+                <field name="outstanding_balance" sum="Outstanding"/>
+                <field name="state" widget="badge" decoration-info="state == 'draft'" decoration-success="state in ('running', 'disbursed')" decoration-muted="state == 'closed'" decoration-danger="state == 'cancelled'"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_line_list" model="ir.ui.view">
+        <field name="name">staff.loan.line.list</field>
+        <field name="model">staff.loan.line</field>
+        <field name="arch" type="xml">
+            <list decoration-success="state == 'paid'" decoration-warning="state == 'partial'" decoration-danger="state == 'overdue'">
+                <field name="sequence"/>
+                <field name="loan_id"/>
+                <field name="employee_id"/>
+                <field name="due_date"/>
+                <field name="principal" sum="Principal"/>
+                <field name="interest" sum="Interest"/>
+                <field name="payment" sum="Payment"/>
+                <field name="paid_amount" sum="Paid"/>
+                <field name="open_amount" sum="Open"/>
+                <field name="balance"/>
+                <field name="state" widget="badge" decoration-success="state == 'paid'" decoration-warning="state == 'partial'" decoration-danger="state == 'overdue'"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_search" model="ir.ui.view">
+        <field name="name">staff.loan.search</field>
+        <field name="model">staff.loan</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="employee_id"/>
+                <field name="department_id"/>
+                <filter string="Current" name="current" domain="[('state', 'in', ('draft', 'approved', 'disbursed', 'running'))]"/>
+                <filter string="Running" name="running" domain="[('state', '=', 'running')]"/>
+                <filter string="Closed" name="closed" domain="[('state', '=', 'closed')]"/>
+                <filter string="Cancelled" name="cancelled" domain="[('state', '=', 'cancelled')]"/>
+                <group>
+                    <filter string="Staff" name="group_employee" context="{'group_by': 'employee_id'}"/>
+                    <filter string="Department" name="group_department" context="{'group_by': 'department_id'}"/>
+                    <filter string="Status" name="group_state" context="{'group_by': 'state'}"/>
+                    <filter string="Company" name="group_company" context="{'group_by': 'company_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_form" model="ir.ui.view">
+        <field name="name">staff.loan.form</field>
+        <field name="model">staff.loan</field>
+        <field name="arch" type="xml">
+            <form string="Staff Loan">
+                <header>
+                    <button name="action_compute_schedule" string="Compute Schedule" type="object" class="btn-secondary" invisible="state != 'draft'"/>
+                    <button name="action_approve_wizard" string="Approve" type="object" class="btn-primary" invisible="state != 'draft'"/>
+                    <button name="action_disburse_wizard" string="Disburse" type="object" class="btn-primary" invisible="state != 'approved'"/>
+                    <button name="action_register_collection" string="Register Collection" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed')"/>
+                    <button name="action_close_wizard" string="Close Loan" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed')"/>
+                    <button name="action_cancel_wizard" string="Cancel" type="object" class="btn-secondary" invisible="state not in ('draft', 'approved')"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,approved,disbursed,running,closed"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button class="oe_stat_button" type="object" name="action_open_entries" icon="fa-bars">
+                            <field name="posted_entry_count" string="Posted Entries" widget="statinfo"/>
+                        </button>
+                        <button class="oe_stat_button" type="object" name="action_open_outstanding_lines" icon="fa-money">
+                            <field name="outstanding_balance" string="Outstanding" widget="monetary"/>
+                        </button>
+                        <button class="oe_stat_button" type="object" name="action_open_documents" icon="fa-file-text-o">
+                            <field name="document_count" string="Documents" widget="statinfo"/>
+                        </button>
+                    </div>
+                    <field name="currency_id" invisible="1"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="employee_id" readonly="state != 'draft'"/>
+                            <field name="department_id"/>
+                            <field name="branch_id"/>
+                            <field name="loan_amount" readonly="state != 'draft'"/>
+                            <field name="interest_type" readonly="state != 'draft'"/>
+                            <field name="interest_rate" readonly="state != 'draft'"/>
+                            <field name="total_interest"/>
+                            <field name="outstanding_balance"/>
+                        </group>
+                        <group>
+                            <field name="loan_date" readonly="state != 'draft'"/>
+                            <field name="first_payment_date" readonly="state != 'draft'"/>
+                            <field name="duration" readonly="state != 'draft'"/>
+                            <field name="payment_frequency" readonly="state != 'draft'"/>
+                            <field name="payment_method" readonly="state != 'draft'"/>
+                            <field name="disbursement_date"/>
+                            <field name="reference"/>
+                            <field name="company_id" readonly="state != 'draft'" groups="base.group_multi_company"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Repayment Schedule">
+                            <field name="line_ids" readonly="1">
+                                <list decoration-success="state == 'paid'" decoration-warning="state == 'partial'" decoration-danger="state == 'overdue'">
+                                    <field name="sequence"/>
+                                    <field name="due_date"/>
+                                    <field name="principal"/>
+                                    <field name="interest"/>
+                                    <field name="payment"/>
+                                    <field name="balance"/>
+                                    <field name="paid_amount"/>
+                                    <field name="open_amount"/>
+                                    <field name="state" widget="badge" decoration-success="state == 'paid'" decoration-warning="state == 'partial'" decoration-danger="state == 'overdue'"/>
+                                    <button name="action_collect_wizard" string="Pay" type="object" class="btn-primary" invisible="state == 'paid' or parent.state not in ('running', 'disbursed')"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Accounting Settings">
+                            <group>
+                                <group>
+                                    <field name="receivable_account_id" readonly="state not in ('draft', 'approved')"/>
+                                    <field name="interest_income_account_id" readonly="state not in ('draft', 'approved')"/>
+                                    <field name="writeoff_account_id" readonly="state not in ('draft', 'approved')"/>
+                                </group>
+                                <group>
+                                    <field name="disbursement_journal_id" readonly="state not in ('draft', 'approved')"/>
+                                    <field name="collection_journal_id" readonly="state not in ('draft', 'approved')"/>
+                                    <field name="disbursement_move_id"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Collection History">
+                            <field name="collection_move_ids" readonly="1"/>
+                        </page>
+                        <page string="Documents">
+                            <field name="message_attachment_count" invisible="1"/>
+                            <div class="alert alert-info" role="status">
+                                Upload supporting files from the chatter attachment button. Use the Documents smart button to open all loan attachments.
+                            </div>
+                        </page>
+                        <page string="Notes">
+                            <field name="notes" placeholder="Internal loan purpose, repayment conditions, management instructions, or amendments."/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_pivot" model="ir.ui.view">
+        <field name="name">staff.loan.pivot</field>
+        <field name="model">staff.loan</field>
+        <field name="arch" type="xml">
+            <pivot>
+                <field name="employee_id" type="row"/>
+                <field name="state" type="col"/>
+                <field name="loan_amount" type="measure"/>
+                <field name="outstanding_balance" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="action_staff_loan" model="ir.actions.act_window">
+        <field name="name">Staff Loans</field>
+        <field name="res_model">staff.loan</field>
+        <field name="view_mode">list,form,pivot</field>
+        <field name="search_view_id" ref="view_staff_loan_search"/>
+        <field name="context">{'search_default_current': 1}</field>
+    </record>
+
+    <record id="action_staff_loan_line" model="ir.actions.act_window">
+        <field name="name">Staff Loan Installments</field>
+        <field name="res_model">staff.loan.line</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <menuitem id="menu_staff_loan_root" name="Staff Loans" parent="accountant.account_assets_liabilities_menu" sequence="63" groups="account.group_account_readonly"/>
+    <menuitem id="menu_staff_loan" name="Staff Loans" parent="menu_staff_loan_root" action="action_staff_loan" sequence="10" groups="account.group_account_readonly"/>
+    <menuitem id="menu_staff_loan_lines" name="Installments" parent="menu_staff_loan_root" action="action_staff_loan_line" sequence="20" groups="account.group_account_readonly"/>
+</odoo>

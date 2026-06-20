@@ -1,0 +1,61 @@
+<odoo>
+    <record id="action_report_staff_loan_agreement" model="ir.actions.report">
+        <field name="name">Staff Loan Agreement</field>
+        <field name="model">staff.loan</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">tha_staff_loan.report_staff_loan_agreement</field>
+        <field name="report_file">tha_staff_loan.report_staff_loan_agreement</field>
+        <field name="binding_model_id" ref="model_staff_loan"/>
+        <field name="binding_type">report</field>
+    </record>
+
+    <record id="action_report_staff_loan_schedule" model="ir.actions.report">
+        <field name="name">Repayment Schedule</field>
+        <field name="model">staff.loan</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">tha_staff_loan.report_staff_loan_schedule</field>
+        <field name="report_file">tha_staff_loan.report_staff_loan_schedule</field>
+        <field name="binding_model_id" ref="model_staff_loan"/>
+        <field name="binding_type">report</field>
+    </record>
+
+    <record id="action_report_staff_loan_statement" model="ir.actions.report">
+        <field name="name">Staff Loan Statement</field>
+        <field name="model">staff.loan</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">tha_staff_loan.report_staff_loan_statement</field>
+        <field name="report_file">tha_staff_loan.report_staff_loan_statement</field>
+        <field name="binding_model_id" ref="model_staff_loan"/>
+        <field name="binding_type">report</field>
+    </record>
+
+    <record id="action_report_staff_loan_outstanding" model="ir.actions.report">
+        <field name="name">Outstanding Balance Report</field>
+        <field name="model">staff.loan</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">tha_staff_loan.report_staff_loan_outstanding</field>
+        <field name="report_file">tha_staff_loan.report_staff_loan_outstanding</field>
+        <field name="binding_model_id" ref="model_staff_loan"/>
+        <field name="binding_type">report</field>
+    </record>
+
+    <record id="action_report_staff_loan_collection" model="ir.actions.report">
+        <field name="name">Collection History</field>
+        <field name="model">staff.loan</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">tha_staff_loan.report_staff_loan_collection</field>
+        <field name="report_file">tha_staff_loan.report_staff_loan_collection</field>
+        <field name="binding_model_id" ref="model_staff_loan"/>
+        <field name="binding_type">report</field>
+    </record>
+
+    <record id="action_report_staff_loan_closure" model="ir.actions.report">
+        <field name="name">Loan Closure Report</field>
+        <field name="model">staff.loan</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">tha_staff_loan.report_staff_loan_closure</field>
+        <field name="report_file">tha_staff_loan.report_staff_loan_closure</field>
+        <field name="binding_model_id" ref="model_staff_loan"/>
+        <field name="binding_type">report</field>
+    </record>
+</odoo>

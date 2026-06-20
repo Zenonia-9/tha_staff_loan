@@ -1,0 +1,122 @@
+<odoo>
+    <record id="view_staff_loan_compute_wizard" model="ir.ui.view">
+        <field name="name">staff.loan.compute.wizard.form</field>
+        <field name="model">staff.loan.compute.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Compute Schedule">
+                <group>
+                    <field name="loan_id" invisible="1"/>
+                    <field name="currency_id" invisible="1"/>
+                    <field name="loan_amount"/>
+                    <field name="loan_date"/>
+                    <field name="first_payment_date"/>
+                    <field name="duration"/>
+                    <field name="interest_rate"/>
+                </group>
+                <field name="preview" nolabel="1" readonly="1"/>
+                <footer>
+                    <button name="action_compute" string="Compute Schedule" type="object" class="btn-primary"/>
+                    <button string="Cancel" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_approve_wizard" model="ir.ui.view">
+        <field name="name">staff.loan.approve.wizard.form</field>
+        <field name="model">staff.loan.approve.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Approve Staff Loan">
+                <group>
+                    <field name="loan_id" invisible="1"/>
+                    <field name="approval_date"/>
+                    <field name="remarks"/>
+                </group>
+                <footer>
+                    <button name="action_approve" string="Approve" type="object" class="btn-primary"/>
+                    <button string="Cancel" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_disburse_wizard" model="ir.ui.view">
+        <field name="name">staff.loan.disburse.wizard.form</field>
+        <field name="model">staff.loan.disburse.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Disburse Staff Loan">
+                <group>
+                    <field name="loan_id" invisible="1"/>
+                    <field name="disbursement_date"/>
+                    <field name="journal_id"/>
+                    <field name="reference"/>
+                    <field name="remarks"/>
+                </group>
+                <field name="preview" nolabel="1" readonly="1"/>
+                <footer>
+                    <button name="action_disburse" string="Post Disbursement" type="object" class="btn-primary"/>
+                    <button string="Cancel" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_collection_wizard" model="ir.ui.view">
+        <field name="name">staff.loan.collection.wizard.form</field>
+        <field name="model">staff.loan.collection.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Register Collection">
+                <group>
+                    <field name="loan_id" invisible="1"/>
+                    <field name="line_id" readonly="1"/>
+                    <field name="currency_id" invisible="1"/>
+                    <field name="collection_date"/>
+                    <field name="journal_id"/>
+                    <field name="amount"/>
+                    <field name="reference"/>
+                    <field name="remarks"/>
+                </group>
+                <footer>
+                    <button name="action_collect" string="Post Collection" type="object" class="btn-primary"/>
+                    <button string="Cancel" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_close_wizard" model="ir.ui.view">
+        <field name="name">staff.loan.close.wizard.form</field>
+        <field name="model">staff.loan.close.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Close Staff Loan">
+                <group>
+                    <field name="loan_id" invisible="1"/>
+                    <field name="close_date"/>
+                    <field name="remarks"/>
+                </group>
+                <footer>
+                    <button name="action_close" string="Close Loan" type="object" class="btn-primary"/>
+                    <button string="Cancel" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_cancel_wizard" model="ir.ui.view">
+        <field name="name">staff.loan.cancel.wizard.form</field>
+        <field name="model">staff.loan.cancel.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Cancel Staff Loan">
+                <group>
+                    <field name="loan_id" invisible="1"/>
+                    <field name="cancel_date"/>
+                    <field name="reason"/>
+                </group>
+                <footer>
+                    <button name="action_cancel" string="Cancel Loan" type="object" class="btn-primary"/>
+                    <button string="Close" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,13 @@
+<odoo>
+    <record id="staff_loan_company_rule" model="ir.rule">
+        <field name="name">Staff Loan: company rule</field>
+        <field name="model_id" ref="model_staff_loan"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="staff_loan_line_company_rule" model="ir.rule">
+        <field name="name">Staff Loan Installment: company rule</field>
+        <field name="model_id" ref="model_staff_loan_line"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+</odoo>
