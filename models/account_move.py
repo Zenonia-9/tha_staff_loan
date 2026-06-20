@@ -21,6 +21,7 @@ class AccountMove(models.Model):
         ondelete="restrict",
     )
     is_staff_loan_disbursement = fields.Boolean(readonly=True, copy=False)
+    is_staff_loan_repayment_move = fields.Boolean(readonly=True, copy=False)
     is_staff_loan_collection = fields.Boolean(readonly=True, copy=False)
 
     def open_staff_loan(self):
