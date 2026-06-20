@@ -1,4 +1,4 @@
-from odoo import fields, models, _
+from odoo import api, fields, models, _
 
 
 class AccountMove(models.Model):
@@ -23,6 +23,50 @@ class AccountMove(models.Model):
     is_staff_loan_disbursement = fields.Boolean(readonly=True, copy=False)
     is_staff_loan_repayment_move = fields.Boolean(readonly=True, copy=False)
     is_staff_loan_collection = fields.Boolean(readonly=True, copy=False)
+    staff_loan_settlement_amount = fields.Monetary(
+        string="Settlement",
+        currency_field="staff_loan_currency_id",
+        compute="_compute_staff_loan_settlement",
+    )
+    staff_loan_outstanding_balance = fields.Monetary(
+        string="Outstanding Balance",
+        currency_field="staff_loan_currency_id",
+        compute="_compute_staff_loan_settlement",
+    )
+    staff_loan_currency_id = fields.Many2one(related="staff_loan_id.currency_id", string="Staff Loan Currency")
+
+    @api.depends(
+        "staff_loan_id",
+        "staff_loan_id.total_payment",
+        "staff_loan_id.line_ids.collection_move_ids",
+        "line_ids.debit",
+        "line_ids.credit",
+        "line_ids.account_id",
+    )
+    def _compute_staff_loan_settlement(self):
+        for move in self:
+            move.staff_loan_settlement_amount = 0.0
+            move.staff_loan_outstanding_balance = 0.0
+        for loan in self.mapped("staff_loan_id"):
+            outstanding = loan.total_payment
+            moves = loan.line_ids.collection_move_ids.filtered(lambda move: move.state == "posted").sorted(
+                lambda move: (move.date, move.id)
+            )
+            for move in moves:
+                settlement = move._get_staff_loan_settlement_amount()
+                outstanding = max(outstanding - settlement, 0.0)
+                move.staff_loan_settlement_amount = settlement
+                move.staff_loan_outstanding_balance = outstanding
+
+    def _get_staff_loan_settlement_amount(self):
+        self.ensure_one()
+        loan = self.staff_loan_id
+        if not loan:
+            return 0.0
+        settlement_lines = self.line_ids.filtered(
+            lambda line: line.account_id in (loan.receivable_account_id | loan.interest_income_account_id)
+        )
+        return sum(settlement_lines.mapped("credit"))
 
     def open_staff_loan(self):
         self.ensure_one()

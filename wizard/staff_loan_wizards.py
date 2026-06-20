@@ -2,7 +2,7 @@ from dateutil.relativedelta import relativedelta
 
 from odoo import api, fields, models, _, Command
 from odoo.exceptions import UserError
-from odoo.tools import float_compare, format_date
+from odoo.tools import float_compare, float_is_zero, format_date
 
 
 class StaffLoanComputeWizard(models.TransientModel):
@@ -162,7 +162,7 @@ class StaffLoanDisburseWizard(models.TransientModel):
         if loan:
             res.update({
                 "loan_id": loan.id,
-                "journal_id": loan.disbursement_journal_id.id,
+                "journal_id": loan._get_loan_journal().id,
                 "reference": loan.reference or loan.name,
             })
         return res
@@ -207,7 +207,7 @@ class StaffLoanCollectionWizard(models.TransientModel):
         if loan:
             res.update({
                 "loan_id": loan.id,
-                "journal_id": loan.collection_journal_id.id,
+                "journal_id": loan._get_loan_journal().id,
                 "reference": loan.reference or loan.name,
             })
         if line:
@@ -232,12 +232,20 @@ class StaffLoanCloseWizard(models.TransientModel):
     _description = "Staff Loan Close Wizard"
 
     loan_id = fields.Many2one("staff.loan", required=True)
+    currency_id = fields.Many2one(related="loan_id.currency_id")
+    loan_amount = fields.Monetary(related="loan_id.loan_amount", currency_field="currency_id")
+    total_interest = fields.Monetary(related="loan_id.total_interest", currency_field="currency_id")
+    total_payment = fields.Monetary(related="loan_id.total_payment", currency_field="currency_id")
+    paid_amount = fields.Monetary(related="loan_id.paid_amount", currency_field="currency_id")
+    outstanding_balance = fields.Monetary(related="loan_id.outstanding_balance", currency_field="currency_id")
     close_date = fields.Date(default=fields.Date.context_today, required=True)
     remarks = fields.Text()
 
     def action_close(self):
         self.ensure_one()
         loan = self.loan_id
+        if not float_is_zero(loan.outstanding_balance, precision_rounding=loan.currency_id.rounding):
+            raise UserError(_("You can close the staff loan only when the outstanding balance is zero."))
         loan.line_ids.generated_move_ids.filtered(
             lambda move: move.staff_loan_line_id.due_date > self.close_date and move.state == "draft"
         ).unlink()
@@ -273,4 +281,27 @@ class StaffLoanCancelWizard(models.TransientModel):
             "cancel_reason": self.reason,
         })
         loan.message_post(body=_("Loan cancelled on %(date)s. %(reason)s", date=self.cancel_date, reason=self.reason))
+        return {"type": "ir.actions.act_window_close"}
+
+
+class StaffLoanDocumentWizard(models.TransientModel):
+    _name = "staff.loan.document.wizard"
+    _description = "Staff Loan Document Upload Wizard"
+
+    loan_id = fields.Many2one("staff.loan", required=True)
+    file = fields.Binary(required=True, attachment=False)
+    file_name = fields.Char(required=True)
+    description = fields.Char()
+
+    def action_upload(self):
+        self.ensure_one()
+        name = self.description or self.file_name
+        self.env["ir.attachment"].create({
+            "name": name,
+            "datas": self.file,
+            "res_model": "staff.loan",
+            "res_id": self.loan_id.id,
+            "company_id": self.loan_id.company_id.id,
+        })
+        self.loan_id.message_post(body=_("Document uploaded: %s", name))
         return {"type": "ir.actions.act_window_close"}

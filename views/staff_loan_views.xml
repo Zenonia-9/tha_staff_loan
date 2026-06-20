@@ -3,7 +3,7 @@
         <field name="name">staff.loan.list</field>
         <field name="model">staff.loan</field>
         <field name="arch" type="xml">
-            <list decoration-info="state == 'draft'" decoration-success="state in ('running', 'disbursed')" decoration-muted="state in ('closed', 'cancelled')">
+            <list decoration-info="state == 'draft'" decoration-muted="state in ('closed', 'cancelled')">
                 <field name="name"/>
                 <field name="employee_id"/>
                 <field name="department_id" optional="show"/>
@@ -21,7 +21,7 @@
         <field name="name">staff.loan.line.list</field>
         <field name="model">staff.loan.line</field>
         <field name="arch" type="xml">
-            <list string="Staff Loan lines" decoration-info="not is_repayment_move_posted">
+            <list string="Staff Loan lines" decoration-info="not is_repayment_move_posted" open_form_view="False" create="0" delete="0">
                 <field name="sequence" string="#" width="30px" optional="hide"/>
                 <field name="loan_id"/>
                 <field name="employee_id" optional="hide"/>
@@ -30,6 +30,21 @@
                 <field name="interest" string="Interests" sum="Total interests"/>
                 <field name="payment" string="Payments" sum="Total payments"/>
                 <field name="balance" string="Outstanding Balance"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_outstanding_move_list" model="ir.ui.view">
+        <field name="name">staff.loan.outstanding.account.move.list</field>
+        <field name="model">account.move</field>
+        <field name="arch" type="xml">
+            <list string="Outstanding Balance" create="0" edit="0" delete="0" default_order="date,id">
+                <field name="date" string="Date"/>
+                <field name="name" string="Number"/>
+                <field name="ref" string="Reference"/>
+                <field name="journal_id" string="Journal"/>
+                <field name="staff_loan_settlement_amount" string="Settlement" sum="Total Settlement"/>
+                <field name="staff_loan_outstanding_balance" string="Outstanding Balance"/>
             </list>
         </field>
     </record>
@@ -74,14 +89,16 @@
         <field name="arch" type="xml">
             <form string="Staff Loan">
                 <header>
-                    <button name="action_compute_schedule" string="Compute Schedule" type="object" class="btn-secondary" invisible="state != 'draft'"/>
+                    <button name="action_compute_schedule" string="Compute Schedule" type="object" class="btn-secondary" invisible="state != 'draft' or line_ids"/>
+                    <button name="action_reset" string="Reset" type="object" class="btn-secondary" invisible="state != 'draft' or not line_ids"/>
                     <button name="action_approve_wizard" string="Approve" type="object" class="btn-primary" invisible="state != 'draft'"/>
                     <button name="action_disburse_wizard" string="Disburse" type="object" class="btn-primary" invisible="state != 'approved'"/>
                     <button name="action_register_collection" string="Register Collection" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed')"/>
-                    <button name="action_close_wizard" string="Close Loan" type="object" class="btn-secondary" invisible="state != 'running'"/>
+                    <button name="action_close_wizard" string="Close" type="object" class="btn-secondary" invisible="state != 'running'"/>
                     <button name="action_cancel" string="Cancel" type="object" class="btn-secondary" invisible="state != 'running'"/>
                     <button name="action_cancel_wizard" string="Cancel" type="object" class="btn-secondary" invisible="state not in ('draft', 'approved')"/>
-                    <field name="state" widget="statusbar" statusbar_visible="draft,approved,disbursed,running,closed"/>
+                    <button name="action_set_to_draft" string="Set to Draft" type="object" class="btn-secondary" invisible="state != 'cancelled'"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,approved,disbursed,running,closed,cancelled"/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
@@ -114,7 +131,12 @@
                         <group>
                             <field name="loan_date" readonly="state != 'draft'"/>
                             <field name="first_payment_date" readonly="state != 'draft'"/>
-                            <field name="duration" readonly="state != 'draft'"/>
+                            <label for="duration" string="Duration"/>
+                            <div>
+                                <field name="duration" class="oe_inline" readonly="state != 'draft'"/>
+                                <span class="oe_inline" invisible="duration == 1"> months</span>
+                                <span class="oe_inline" invisible="duration != 1"> month</span>
+                            </div>
                             <field name="payment_frequency" readonly="state != 'draft'"/>
                             <field name="payment_method" readonly="state != 'draft'"/>
                             <field name="disbursement_date"/>
@@ -123,9 +145,9 @@
                         </group>
                     </group>
                     <notebook>
-                        <page string="Amortization schedule">
+                        <page string="Repayment Schedule">
                             <field name="line_ids" readonly="1">
-                                <list decoration-info="not is_repayment_move_posted">
+                                <list decoration-info="not is_repayment_move_posted" open_form_view="False" create="0" delete="0">
                                     <field name="sequence" string="#" width="30px" optional="hide"/>
                                     <field name="due_date" string="Date"/>
                                     <field name="principal" string="Principals" sum="Total principals"/>
@@ -138,27 +160,17 @@
                         <page string="Accounting Settings">
                             <group>
                                 <group>
-                                    <field name="receivable_account_id" readonly="state not in ('draft', 'approved')"/>
-                                    <field name="interest_income_account_id" readonly="state not in ('draft', 'approved')"/>
-                                    <field name="disbursement_account_id" readonly="state not in ('draft', 'approved')"/>
-                                    <field name="collection_account_id" readonly="state not in ('draft', 'approved')"/>
-                                    <field name="writeoff_account_id" readonly="state not in ('draft', 'approved')"/>
+                                    <field name="receivable_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
+                                    <field name="interest_income_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
+                                    <field name="disbursement_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
+                                    <field name="collection_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
+                                    <field name="writeoff_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
                                 </group>
                                 <group>
                                     <field name="disbursement_journal_id" readonly="state not in ('draft', 'approved')"/>
-                                    <field name="collection_journal_id" readonly="state not in ('draft', 'approved')"/>
                                     <field name="disbursement_move_id"/>
                                 </group>
                             </group>
-                        </page>
-                        <page string="Collection History">
-                            <field name="collection_move_ids" readonly="1"/>
-                        </page>
-                        <page string="Documents">
-                            <field name="message_attachment_count" invisible="1"/>
-                            <div class="alert alert-info" role="status">
-                                Upload supporting files from the chatter attachment button. Use the Documents smart button to open all loan attachments.
-                            </div>
                         </page>
                         <page string="Notes">
                             <field name="notes" placeholder="Internal loan purpose, repayment conditions, management instructions, or amendments."/>
@@ -185,6 +197,7 @@
 
     <record id="action_staff_loan" model="ir.actions.act_window">
         <field name="name">Staff Loans</field>
+        <field name="path">staff-loan</field>
         <field name="res_model">staff.loan</field>
         <field name="view_mode">list,form,pivot</field>
         <field name="search_view_id" ref="view_staff_loan_search"/>
@@ -197,7 +210,57 @@
         <field name="view_mode">list,form</field>
     </record>
 
-    <menuitem id="menu_staff_loan_root" name="Staff Loans" parent="accountant.account_assets_liabilities_menu" sequence="63" groups="account.group_account_readonly"/>
+    <record id="action_staff_loan_document_upload" model="ir.actions.act_window">
+        <field name="name">Upload Document</field>
+        <field name="res_model">staff.loan.document.wizard</field>
+        <field name="target">new</field>
+        <field name="view_mode">form</field>
+    </record>
+
+    <record id="view_staff_loan_attachment_list" model="ir.ui.view">
+        <field name="name">staff.loan.attachment.list</field>
+        <field name="model">ir.attachment</field>
+        <field name="arch" type="xml">
+            <list string="Documents" create="0" edit="0">
+                <header>
+                    <button name="%(action_staff_loan_document_upload)d" string="Upload" type="action" class="btn-primary" context="{'default_loan_id': context.get('default_loan_id')}"/>
+                </header>
+                <field name="name"/>
+                <field name="create_date"/>
+                <field name="create_uid"/>
+                <field name="file_size"/>
+                <field name="mimetype"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_attachment_kanban" model="ir.ui.view">
+        <field name="name">staff.loan.attachment.kanban</field>
+        <field name="model">ir.attachment</field>
+        <field name="inherit_id" ref="mail.view_document_file_kanban"/>
+        <field name="mode">primary</field>
+        <field name="arch" type="xml">
+            <xpath expr="//kanban" position="attributes">
+                <attribute name="create">0</attribute>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_staff_loan_attachment" model="ir.actions.act_window">
+        <field name="name">Documents</field>
+        <field name="res_model">ir.attachment</field>
+        <field name="view_mode">list,kanban,form</field>
+        <field name="views" eval="[(ref('view_staff_loan_attachment_list'), 'list'), (ref('view_staff_loan_attachment_kanban'), 'kanban'), (False, 'form')]"/>
+        <field name="context">{'create': False}</field>
+    </record>
+
+    <menuitem id="menu_staff_loan_root" name="Staff Loans" parent="accountant.account_assets_liabilities_menu" action="action_staff_loan" sequence="63" groups="account.group_account_readonly"/>
     <menuitem id="menu_staff_loan" name="Staff Loans" parent="menu_staff_loan_root" action="action_staff_loan" sequence="10" groups="account.group_account_readonly"/>
     <menuitem id="menu_staff_loan_lines" name="Installments" parent="menu_staff_loan_root" action="action_staff_loan_line" sequence="20" groups="base.group_no_one"/>
+    <record id="menu_staff_loan" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
+    <record id="menu_staff_loan_lines" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
 </odoo>

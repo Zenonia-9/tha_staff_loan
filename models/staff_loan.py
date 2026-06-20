@@ -94,7 +94,7 @@ class StaffLoan(models.Model):
 
     receivable_account_id = fields.Many2one(
         "account.account",
-        string="Staff Loan Receivable Account",
+        string="Receivable",
         tracking=True,
         domain="[('account_type', 'in', ('asset_current', 'asset_receivable')), ('company_ids', 'in', company_id)]",
     )
@@ -106,7 +106,7 @@ class StaffLoan(models.Model):
     )
     disbursement_journal_id = fields.Many2one(
         "account.journal",
-        string="Disbursement Journal",
+        string="Journal",
         tracking=True,
         domain="[('type', 'in', ('cash', 'bank', 'general')), ('company_id', '=', company_id)]",
     )
@@ -118,14 +118,14 @@ class StaffLoan(models.Model):
     )
     disbursement_account_id = fields.Many2one(
         "account.account",
-        string="Disbursement Credit Account",
+        string="Disbursement Account",
         tracking=True,
         domain="[('company_ids', 'in', company_id)]",
         help="Credit account used when posting the staff loan disbursement. This keeps the journal independent from a default account.",
     )
     collection_account_id = fields.Many2one(
         "account.account",
-        string="Collection Debit Account",
+        string="Collection Account",
         tracking=True,
         domain="[('company_ids', 'in', company_id)]",
         help="Debit account used by generated staff loan repayment entries. This keeps the collection journal independent from a default account.",
@@ -149,6 +149,11 @@ class StaffLoan(models.Model):
         string="Collection Entries",
         compute="_compute_collection_move_ids",
     )
+    receivable_account_name = fields.Char(compute="_compute_account_names")
+    interest_income_account_name = fields.Char(compute="_compute_account_names")
+    disbursement_account_name = fields.Char(compute="_compute_account_names")
+    collection_account_name = fields.Char(compute="_compute_account_names")
+    writeoff_account_name = fields.Char(compute="_compute_account_names")
 
     approved_by_id = fields.Many2one("res.users", string="Approved By", readonly=True, copy=False)
     approval_date = fields.Date(readonly=True, copy=False)
@@ -186,7 +191,6 @@ class StaffLoan(models.Model):
             "receivable_account_id",
             "interest_income_account_id",
             "disbursement_journal_id",
-            "collection_journal_id",
             "disbursement_account_id",
             "collection_account_id",
             "writeoff_account_id",
@@ -198,7 +202,6 @@ class StaffLoan(models.Model):
             ("receivable_account_id", "!=", False),
             ("interest_income_account_id", "!=", False),
             ("disbursement_journal_id", "!=", False),
-            ("collection_journal_id", "!=", False),
             ("disbursement_account_id", "!=", False),
             ("collection_account_id", "!=", False),
         ], limit=1)
@@ -258,6 +261,21 @@ class StaffLoan(models.Model):
             loan.posted_entry_count = len(moves.filtered(lambda move: move.state == "posted"))
             loan.document_count = loan.message_attachment_count
 
+    @api.depends(
+        "receivable_account_id",
+        "interest_income_account_id",
+        "disbursement_account_id",
+        "collection_account_id",
+        "writeoff_account_id",
+    )
+    def _compute_account_names(self):
+        for loan in self:
+            loan.receivable_account_name = loan.receivable_account_id.name or ""
+            loan.interest_income_account_name = loan.interest_income_account_id.name or ""
+            loan.disbursement_account_name = loan.disbursement_account_id.name or ""
+            loan.collection_account_name = loan.collection_account_id.name or ""
+            loan.writeoff_account_name = loan.writeoff_account_id.name or ""
+
     def _check_company_consistency(self):
         for loan in self:
             company = loan.company_id
@@ -271,7 +289,7 @@ class StaffLoan(models.Model):
             for account in accounts:
                 if account and company not in account.company_ids:
                     raise UserError(_("Account %(account)s is not available for %(company)s.", account=account.display_name, company=company.display_name))
-            for journal in loan.disbursement_journal_id | loan.collection_journal_id:
+            for journal in loan.disbursement_journal_id:
                 if journal and journal.company_id != company:
                     raise UserError(_("Journal %(journal)s does not belong to %(company)s.", journal=journal.display_name, company=company.display_name))
 
@@ -290,14 +308,16 @@ class StaffLoan(models.Model):
             if not loan.interest_income_account_id:
                 raise UserError(_("Set the Interest Income Account."))
             if not loan.disbursement_journal_id:
-                raise UserError(_("Set the Disbursement Journal."))
-            if not loan.collection_journal_id:
-                raise UserError(_("Set the Collection Journal."))
+                raise UserError(_("Set the Journal."))
             if not loan.disbursement_account_id:
-                raise UserError(_("Set the Disbursement Credit Account."))
+                raise UserError(_("Set the Disbursement Account."))
             if not loan.collection_account_id:
-                raise UserError(_("Set the Collection Debit Account."))
+                raise UserError(_("Set the Collection Account."))
         self._check_company_consistency()
+
+    def _get_loan_journal(self):
+        self.ensure_one()
+        return self.disbursement_journal_id or self.collection_journal_id
 
     def action_compute_schedule(self):
         self.ensure_one()
@@ -311,6 +331,32 @@ class StaffLoan(models.Model):
             "views": [(False, "form")],
             "context": {"default_loan_id": self.id},
         }
+
+    def action_reset(self):
+        self.ensure_one()
+        if self.state != "draft":
+            raise UserError(_("Only draft loans can be reset."))
+        posted_moves = (self.line_ids.generated_move_ids | self.line_ids.collection_move_ids).filtered(lambda move: move.state == "posted")
+        if posted_moves:
+            raise UserError(_("You cannot reset a loan with posted repayment entries."))
+        (self.line_ids.generated_move_ids | self.line_ids.collection_move_ids).filtered(lambda move: move.state == "draft").unlink()
+        self.line_ids.unlink()
+        self.message_post(body=_("Repayment schedule reset."))
+
+    def action_set_to_draft(self):
+        self.ensure_one()
+        if self.state != "cancelled":
+            raise UserError(_("Only cancelled loans can be set to draft."))
+        moves = self._get_entry_moves().filtered(lambda move: move.state not in ("cancel",))
+        if moves.filtered(lambda move: move.state == "posted"):
+            raise UserError(_("You cannot set this loan to draft while posted entries are linked. Reverse or cancel the entries first."))
+        moves.filtered(lambda move: move.state == "draft").unlink()
+        self.write({
+            "state": "draft",
+            "cancel_date": False,
+            "cancel_reason": False,
+        })
+        self.message_post(body=_("Loan set back to draft."))
 
     def action_approve_wizard(self):
         self.ensure_one()
@@ -398,23 +444,42 @@ class StaffLoan(models.Model):
 
     def action_open_documents(self):
         self.ensure_one()
+        action = self.env.ref("tha_staff_loan.action_staff_loan_attachment").read()[0]
+        action["domain"] = [("res_model", "=", self._name), ("res_id", "=", self.id)]
+        action["context"] = {
+            "default_res_model": self._name,
+            "default_res_id": self.id,
+            "default_loan_id": self.id,
+            "active_model": self._name,
+            "active_id": self.id,
+        }
+        return action
+
+    def action_upload_document(self):
+        self.ensure_one()
         return {
             "type": "ir.actions.act_window",
-            "name": _("Documents"),
-            "res_model": "ir.attachment",
-            "view_mode": "kanban,list,form",
-            "domain": [("res_model", "=", self._name), ("res_id", "=", self.id)],
-            "context": {"default_res_model": self._name, "default_res_id": self.id},
+            "name": _("Upload Document"),
+            "res_model": "staff.loan.document.wizard",
+            "target": "new",
+            "views": [(False, "form")],
+            "context": {"default_loan_id": self.id},
         }
 
     def action_open_outstanding_lines(self):
         self.ensure_one()
+        moves = self.line_ids.collection_move_ids.filtered(lambda move: move.state == "posted")
         return {
             "type": "ir.actions.act_window",
-            "name": _("Outstanding Installments"),
-            "res_model": "staff.loan.line",
+            "name": _("Outstanding Balance"),
+            "res_model": "account.move",
             "view_mode": "list,form",
-            "domain": [("loan_id", "=", self.id), ("state", "in", ("open", "partial", "overdue"))],
+            "views": [
+                (self.env.ref("tha_staff_loan.view_staff_loan_outstanding_move_list").id, "list"),
+                (False, "form"),
+            ],
+            "domain": [("id", "in", moves.ids)],
+            "context": {"default_staff_loan_id": self.id, "create": False},
         }
 
     def _make_move_line_vals(self, account, debit=0.0, credit=0.0, name=False, partner=False):
@@ -472,7 +537,7 @@ class StaffLoan(models.Model):
             for line in loan.line_ids:
                 line._create_repayment_move(
                     line.due_date + relativedelta(day=31),
-                    loan.collection_journal_id,
+                    loan._get_loan_journal(),
                     line.principal,
                     line.interest,
                     loan.reference or loan.name,
@@ -659,7 +724,7 @@ class StaffLoanLine(models.Model):
         if not float_is_zero(remaining_principal + remaining_interest, precision_rounding=self.currency_id.rounding):
             self._create_repayment_move(
                 self.due_date + relativedelta(day=31),
-                loan.collection_journal_id,
+                loan._get_loan_journal(),
                 remaining_principal,
                 remaining_interest,
                 loan.reference or loan.name,
