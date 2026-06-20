@@ -52,7 +52,6 @@
                     <field name="reference"/>
                     <field name="remarks"/>
                 </group>
-                <field name="preview" nolabel="1" readonly="1"/>
                 <footer>
                     <button name="action_disburse" string="Post Disbursement" type="object" class="btn-primary"/>
                     <button string="Cancel" special="cancel" class="btn-secondary"/>
@@ -68,7 +67,7 @@
             <form string="Register Collection">
                 <group>
                     <field name="loan_id" invisible="1"/>
-                    <field name="line_id" readonly="1"/>
+                    <field name="line_id" string="Repayment Schedule" readonly="1" options="{'no_open': True}"/>
                     <field name="currency_id" invisible="1"/>
                     <field name="collection_date"/>
                     <field name="journal_id"/>
@@ -139,7 +138,6 @@
                     <field name="loan_id" invisible="1"/>
                     <field name="file" filename="file_name"/>
                     <field name="file_name" invisible="1"/>
-                    <field name="description" placeholder="Document name"/>
                 </group>
                 <footer>
                     <button name="action_upload" string="Upload" type="object" class="btn-primary"/>

@@ -20,6 +20,12 @@ class AccountMove(models.Model):
         index=True,
         ondelete="restrict",
     )
+    staff_loan_due_date = fields.Date(
+        related="staff_loan_line_id.due_date",
+        string="Due Date",
+        store=True,
+        readonly=True,
+    )
     is_staff_loan_disbursement = fields.Boolean(readonly=True, copy=False)
     is_staff_loan_repayment_move = fields.Boolean(readonly=True, copy=False)
     is_staff_loan_collection = fields.Boolean(readonly=True, copy=False)

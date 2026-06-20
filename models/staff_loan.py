@@ -447,6 +447,7 @@ class StaffLoan(models.Model):
         action = self.env.ref("tha_staff_loan.action_staff_loan_attachment").read()[0]
         action["domain"] = [("res_model", "=", self._name), ("res_id", "=", self.id)]
         action["context"] = {
+            "create": False,
             "default_res_model": self._name,
             "default_res_id": self.id,
             "default_loan_id": self.id,

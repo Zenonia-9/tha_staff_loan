@@ -21,15 +21,16 @@
         <field name="name">staff.loan.line.list</field>
         <field name="model">staff.loan.line</field>
         <field name="arch" type="xml">
-            <list string="Staff Loan lines" decoration-info="not is_repayment_move_posted" open_form_view="False" create="0" delete="0">
+            <list string="Staff Loan lines" editable="bottom" create="0" delete="0" limit="80" decoration-info="not is_repayment_move_posted">
                 <field name="sequence" string="#" width="30px" optional="hide"/>
-                <field name="loan_id"/>
+                <field name="loan_id" optional="hide"/>
                 <field name="employee_id" optional="hide"/>
-                <field name="due_date" string="Date"/>
+                <field name="due_date" string="Due Date"/>
                 <field name="principal" string="Principals" sum="Total principals"/>
                 <field name="interest" string="Interests" sum="Total interests"/>
                 <field name="payment" string="Payments" sum="Total payments"/>
                 <field name="balance" string="Outstanding Balance"/>
+                <field name="state" string="Status" widget="badge" decoration-info="state == 'open'" decoration-warning="state == 'partial'" decoration-success="state == 'paid'" decoration-danger="state == 'overdue'"/>
             </list>
         </field>
     </record>
@@ -40,6 +41,7 @@
         <field name="arch" type="xml">
             <list string="Outstanding Balance" create="0" edit="0" delete="0" default_order="date,id">
                 <field name="date" string="Date"/>
+                <field name="staff_loan_due_date" string="Due Date"/>
                 <field name="name" string="Number"/>
                 <field name="ref" string="Reference"/>
                 <field name="journal_id" string="Journal"/>
@@ -89,11 +91,11 @@
         <field name="arch" type="xml">
             <form string="Staff Loan">
                 <header>
-                    <button name="action_compute_schedule" string="Compute Schedule" type="object" class="btn-secondary" invisible="state != 'draft' or line_ids"/>
                     <button name="action_reset" string="Reset" type="object" class="btn-secondary" invisible="state != 'draft' or not line_ids"/>
                     <button name="action_approve_wizard" string="Approve" type="object" class="btn-primary" invisible="state != 'draft'"/>
                     <button name="action_disburse_wizard" string="Disburse" type="object" class="btn-primary" invisible="state != 'approved'"/>
                     <button name="action_register_collection" string="Register Collection" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed')"/>
+                    <button name="action_compute_schedule" string="Compute" type="object" class="btn-secondary" invisible="state != 'draft' or line_ids"/>
                     <button name="action_close_wizard" string="Close" type="object" class="btn-secondary" invisible="state != 'running'"/>
                     <button name="action_cancel" string="Cancel" type="object" class="btn-secondary" invisible="state != 'running'"/>
                     <button name="action_cancel_wizard" string="Cancel" type="object" class="btn-secondary" invisible="state not in ('draft', 'approved')"/>
@@ -139,23 +141,14 @@
                             </div>
                             <field name="payment_frequency" readonly="state != 'draft'"/>
                             <field name="payment_method" readonly="state != 'draft'"/>
-                            <field name="disbursement_date"/>
+                            <field name="disbursement_date" readonly="1"/>
                             <field name="reference"/>
                             <field name="company_id" readonly="state != 'draft'" groups="base.group_multi_company"/>
                         </group>
                     </group>
                     <notebook>
                         <page string="Repayment Schedule">
-                            <field name="line_ids" readonly="1">
-                                <list decoration-info="not is_repayment_move_posted" open_form_view="False" create="0" delete="0">
-                                    <field name="sequence" string="#" width="30px" optional="hide"/>
-                                    <field name="due_date" string="Date"/>
-                                    <field name="principal" string="Principals" sum="Total principals"/>
-                                    <field name="interest" string="Interests" sum="Total interests"/>
-                                    <field name="payment" string="Payments" sum="Total payments"/>
-                                    <field name="balance" string="Outstanding Balance"/>
-                                </list>
-                            </field>
+                            <field name="line_ids" readonly="state != 'draft'"/>
                         </page>
                         <page string="Accounting Settings">
                             <group>
@@ -237,21 +230,73 @@
     <record id="view_staff_loan_attachment_kanban" model="ir.ui.view">
         <field name="name">staff.loan.attachment.kanban</field>
         <field name="model">ir.attachment</field>
-        <field name="inherit_id" ref="mail.view_document_file_kanban"/>
+        <field name="inherit_id" eval="False"/>
         <field name="mode">primary</field>
         <field name="arch" type="xml">
-            <xpath expr="//kanban" position="attributes">
-                <attribute name="create">0</attribute>
-            </xpath>
+            <kanban edit="false" import="false" create="0">
+                <header>
+                    <button
+                        name="%(action_staff_loan_document_upload)d"
+                        string="Upload"
+                        type="action"
+                        class="btn-primary o-kanban-button-new"
+                        display="always"
+                        context="{'default_loan_id': context.get('default_loan_id')}"
+                    />
+                </header>
+                <field name="id"/>
+                <field name="mimetype"/>
+                <field name="type"/>
+                <templates>
+                    <t t-name="menu">
+                        <a t-attf-href="/web/content/ir.attachment/#{record.id.raw_value}/datas?download=true" download="" class="dropdown-item">Download</a>
+                        <a t-if="widget.deletable" role="menuitem" type="delete" class="dropdown-item">Delete</a>
+                    </t>
+                    <t t-name="card" class="o_kanban_attachment flex-row">
+                        <aside class="o_kanban_image m-1">
+                            <div class="o_kanban_image_wrapper d-flex align-items-center justify-content-center">
+                                <t t-set="webimage" t-value="new RegExp('image.*(gif|jpeg|jpg|png|webp)').test(record.mimetype.value)"/>
+                                <div t-if="record.type.raw_value == 'url'" class="fa fa-link fa-3x text-muted" aria-label="Image is a link"/>
+                                <img t-elif="webimage" t-attf-src="/web/image/#{record.id.raw_value}" width="100" height="100" alt="Document" class="o_attachment_image"/>
+                                <div t-else="!webimage" class="o_image o_image_thumbnail" t-att-data-mimetype="record.mimetype.value"/>
+                            </div>
+                        </aside>
+                        <main class="ms-1">
+                            <div class="o_kanban_details_wrapper d-flex flex-column">
+                                <field name="name" class="text-truncate fw-bold fs-5"/>
+                                <div class="d-flex flex-grow-1 align-items-center">
+                                    <t t-if="record.type.raw_value == 'url'">
+                                        <i class="fa fa-globe" aria-label="Document url"/> <field name="url" widget="url"/>
+                                    </t>
+                                </div>
+                                <div class="d-flex">
+                                    <field name="create_date"/>
+                                    <field name="create_uid" widget="many2one_avatar_user" class="ms-auto"/>
+                                </div>
+                            </div>
+                        </main>
+                    </t>
+                </templates>
+            </kanban>
         </field>
     </record>
 
     <record id="action_staff_loan_attachment" model="ir.actions.act_window">
         <field name="name">Documents</field>
         <field name="res_model">ir.attachment</field>
-        <field name="view_mode">list,kanban,form</field>
-        <field name="views" eval="[(ref('view_staff_loan_attachment_list'), 'list'), (ref('view_staff_loan_attachment_kanban'), 'kanban'), (False, 'form')]"/>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="views" eval="[(ref('view_staff_loan_attachment_kanban'), 'kanban'), (ref('view_staff_loan_attachment_list'), 'list'), (False, 'form')]"/>
         <field name="context">{'create': False}</field>
+        <field name="help" type="html">
+            <div class="o_view_nocontent_smiling_face">
+                Upload the first document for this staff loan.
+            </div>
+            <p>
+                <a type="action" name="%(action_staff_loan_document_upload)d" class="btn btn-primary" data-context="{'default_loan_id': context.get('default_loan_id')}">
+                    Upload
+                </a>
+            </p>
+        </field>
     </record>
 
     <menuitem id="menu_staff_loan_root" name="Staff Loans" parent="accountant.account_assets_liabilities_menu" action="action_staff_loan" sequence="63" groups="account.group_account_readonly"/>

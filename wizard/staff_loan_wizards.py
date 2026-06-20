@@ -9,7 +9,7 @@ class StaffLoanComputeWizard(models.TransientModel):
     _name = "staff.loan.compute.wizard"
     _description = "Staff Loan Compute Wizard"
 
-    loan_id = fields.Many2one("staff.loan", required=True)
+    loan_id = fields.Many2one("staff.loan")
     currency_id = fields.Many2one(related="loan_id.currency_id")
     loan_amount = fields.Monetary(required=True)
     loan_date = fields.Date(required=True)
@@ -291,17 +291,32 @@ class StaffLoanDocumentWizard(models.TransientModel):
     loan_id = fields.Many2one("staff.loan", required=True)
     file = fields.Binary(required=True, attachment=False)
     file_name = fields.Char(required=True)
-    description = fields.Char()
+
+    @api.model
+    def default_get(self, fields_list):
+        res = super().default_get(fields_list)
+        loan_id = self.env.context.get("default_loan_id")
+        if not loan_id and self.env.context.get("active_model") == "staff.loan":
+            loan_id = self.env.context.get("active_id")
+        loan = self.env["staff.loan"].browse(loan_id)
+        if loan:
+            res["loan_id"] = loan.id
+        return res
 
     def action_upload(self):
         self.ensure_one()
-        name = self.description or self.file_name
+        loan = self.loan_id
+        if not loan and self.env.context.get("active_model") == "staff.loan":
+            loan = self.env["staff.loan"].browse(self.env.context.get("active_id"))
+        if not loan:
+            raise UserError(_("The upload must be opened from a staff loan."))
+        name = self.file_name
         self.env["ir.attachment"].create({
             "name": name,
             "datas": self.file,
             "res_model": "staff.loan",
-            "res_id": self.loan_id.id,
-            "company_id": self.loan_id.company_id.id,
+            "res_id": loan.id,
+            "company_id": loan.company_id.id,
         })
-        self.loan_id.message_post(body=_("Document uploaded: %s", name))
+        loan.message_post(body=_("Document uploaded: %s", name))
         return {"type": "ir.actions.act_window_close"}
