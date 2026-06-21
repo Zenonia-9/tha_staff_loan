@@ -1,3 +1,5 @@
+/** @odoo-module **/
+
 import { Component } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 import { FileUploader } from "@web/views/fields/file_handler";
