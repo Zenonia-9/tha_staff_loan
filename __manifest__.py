@@ -28,6 +28,14 @@ disbursement accounting, manual collections, documents, notes, and reports.
         "report/staff_loan_reports.xml",
         "report/staff_loan_templates.xml",
     ],
+    "assets": {
+        "web.assets_backend": [
+            "tha_staff_loan/static/src/components/staff_loan_document_uploader/*.js",
+            "tha_staff_loan/static/src/components/staff_loan_document_uploader/*.xml",
+            "tha_staff_loan/static/src/views/*.js",
+            "tha_staff_loan/static/src/views/*.xml",
+        ],
+    },
     "installable": True,
     "application": False,
     "auto_install": False,

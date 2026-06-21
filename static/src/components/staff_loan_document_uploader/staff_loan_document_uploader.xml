@@ -1,0 +1,26 @@
+<templates>
+
+    <t t-name="tha_staff_loan.DocumentFileUploader">
+        <FileUploader
+            fileUploadClass="'document_file_uploader'"
+            multiUpload="true"
+            onUploaded.bind="onFileUploaded"
+            onUploadComplete.bind="onUploadComplete">
+            <t t-set-slot="toggler">
+                <t t-slot="toggler"/>
+            </t>
+            <t t-slot="default"/>
+        </FileUploader>
+    </t>
+
+    <t t-name="tha_staff_loan.DocumentViewUploadButton">
+        <StaffLoanDocumentUploader>
+            <t t-set-slot="toggler">
+                <button type="button" class="btn btn-secondary" data-hotkey="shift+i">
+                    Upload
+                </button>
+            </t>
+        </StaffLoanDocumentUploader>
+    </t>
+
+</templates>

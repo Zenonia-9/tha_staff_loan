@@ -457,6 +457,25 @@ class StaffLoan(models.Model):
         }
         return action
 
+    @api.model
+    def create_document_from_attachment(self, attachment_ids):
+        loan_id = self.env.context.get("default_loan_id")
+        if not loan_id and self.env.context.get("active_model") == "staff.loan":
+            loan_id = self.env.context.get("active_id")
+        loan = self.browse(loan_id)
+        attachments = self.env["ir.attachment"].browse(attachment_ids)
+        if not loan:
+            raise UserError(_("The upload must be started from a staff loan."))
+        if not attachments:
+            raise UserError(_("No attachment was provided."))
+        attachments.write({
+            "res_model": loan._name,
+            "res_id": loan.id,
+            "company_id": loan.company_id.id,
+        })
+        loan.message_post(body=_("%s document(s) uploaded.", len(attachments)))
+        return loan.action_open_documents()
+
     def action_upload_document(self):
         self.ensure_one()
         return {

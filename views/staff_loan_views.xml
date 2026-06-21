@@ -94,7 +94,6 @@
                     <button name="action_reset" string="Reset" type="object" class="btn-secondary" invisible="state != 'draft' or not line_ids"/>
                     <button name="action_approve_wizard" string="Approve" type="object" class="btn-primary" invisible="state != 'draft'"/>
                     <button name="action_disburse_wizard" string="Disburse" type="object" class="btn-primary" invisible="state != 'approved'"/>
-                    <button name="action_upload_document" string="Upload Document" type="object" class="btn-secondary"/>
                     <button name="action_register_collection" string="Register Collection" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed')"/>
                     <button name="action_compute_schedule" string="Compute" type="object" class="btn-secondary" invisible="state != 'draft' or line_ids"/>
                     <button name="action_close_wizard" string="Close" type="object" class="btn-secondary" invisible="state != 'running'"/>
@@ -111,7 +110,7 @@
                         <button class="oe_stat_button" type="object" name="action_open_outstanding_lines" icon="fa-money">
                             <field name="outstanding_balance" string="Outstanding" widget="monetary"/>
                         </button>
-                        <button class="oe_stat_button" type="object" name="action_open_documents" icon="fa-file-text-o" invisible="document_count == 0">
+                        <button class="oe_stat_button" type="object" name="action_open_documents" icon="fa-file-text-o">
                             <field name="document_count" string="Documents" widget="statinfo"/>
                         </button>
                     </div>
@@ -215,7 +214,7 @@
         <field name="name">staff.loan.attachment.list</field>
         <field name="model">ir.attachment</field>
         <field name="arch" type="xml">
-            <list string="Documents" edit="0">
+            <list string="Documents" edit="0" js_class="staff_loan_attachment_list">
                 <field name="name"/>
                 <field name="create_date"/>
                 <field name="create_uid"/>
@@ -231,7 +230,7 @@
         <field name="inherit_id" eval="False"/>
         <field name="mode">primary</field>
         <field name="arch" type="xml">
-            <kanban edit="false" import="false">
+            <kanban edit="false" import="false" js_class="staff_loan_attachment_kanban">
                 <field name="id"/>
                 <field name="mimetype"/>
                 <field name="type"/>
@@ -275,13 +274,37 @@
         <field name="arch" type="xml">
             <form string="Upload Document">
                 <sheet>
+                    <field name="type" invisible="1"/>
+                    <field name="res_model" invisible="1"/>
+                    <field name="res_id" invisible="1"/>
+                    <field name="company_id" invisible="1"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1>
+                            <field name="name" placeholder="Document Name"/>
+                        </h1>
+                    </div>
                     <group>
-                        <field name="type" invisible="1"/>
-                        <field name="res_model" invisible="1"/>
-                        <field name="res_id" invisible="1"/>
-                        <field name="company_id" invisible="1"/>
-                        <field name="name" invisible="1"/>
-                        <field name="datas" filename="name"/>
+                        <group>
+                            <field name="datas" filename="name"/>
+                            <field name="mimetype" readonly="1"/>
+                            <field name="file_size" readonly="1"/>
+                        </group>
+                        <group string="Linked To">
+                            <field name="res_model" readonly="1"/>
+                            <field name="res_id" readonly="1"/>
+                            <field name="res_name" readonly="1"/>
+                            <field name="company_id" readonly="1" groups="base.group_multi_company"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="History">
+                            <field name="create_uid" readonly="1"/>
+                            <field name="create_date" readonly="1"/>
+                        </group>
+                    </group>
+                    <group invisible="not staff_loan_is_pdf">
+                        <field name="staff_loan_preview_html" widget="html" nolabel="1" readonly="1"/>
                     </group>
                 </sheet>
             </form>
