@@ -445,13 +445,24 @@ class StaffLoan(models.Model):
     def action_open_documents(self):
         self.ensure_one()
         action = self.env.ref("tha_staff_loan.action_staff_loan_attachment").read()[0]
+        kanban_view = self.env.ref("tha_staff_loan.view_staff_loan_attachment_kanban")
+        list_view = self.env.ref("tha_staff_loan.view_staff_loan_attachment_list")
+        form_view = self.env.ref("tha_staff_loan.view_staff_loan_attachment_form")
         action["domain"] = [("res_model", "=", self._name), ("res_id", "=", self.id)]
+        action["views"] = [
+            (kanban_view.id, "kanban"),
+            (list_view.id, "list"),
+            (form_view.id, "form"),
+        ]
+        action["view_mode"] = "kanban,list,form"
+        action["help"] = False
         action["context"] = {
             "create": True,
             "default_res_model": self._name,
             "default_res_id": self.id,
             "default_company_id": self.company_id.id,
             "default_type": "binary",
+            "form_view_ref": "tha_staff_loan.view_staff_loan_attachment_form",
             "active_model": self._name,
             "active_id": self.id,
         }

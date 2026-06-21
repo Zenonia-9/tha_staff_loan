@@ -316,6 +316,7 @@
         <field name="res_model">ir.attachment</field>
         <field name="view_mode">kanban,list,form</field>
         <field name="views" eval="[(ref('view_staff_loan_attachment_kanban'), 'kanban'), (ref('view_staff_loan_attachment_list'), 'list'), (ref('view_staff_loan_attachment_form'), 'form')]"/>
+        <field name="help" eval="False"/>
     </record>
 
     <menuitem id="menu_staff_loan_root" name="Staff Loans" parent="accountant.account_assets_liabilities_menu" action="action_staff_loan" sequence="63" groups="account.group_account_readonly"/>
