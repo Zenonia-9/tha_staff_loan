@@ -94,6 +94,7 @@
                     <button name="action_reset" string="Reset" type="object" class="btn-secondary" invisible="state != 'draft' or not line_ids"/>
                     <button name="action_approve_wizard" string="Approve" type="object" class="btn-primary" invisible="state != 'draft'"/>
                     <button name="action_disburse_wizard" string="Disburse" type="object" class="btn-primary" invisible="state != 'approved'"/>
+                    <button name="action_upload_document" string="Upload Document" type="object" class="btn-secondary"/>
                     <button name="action_register_collection" string="Register Collection" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed')"/>
                     <button name="action_compute_schedule" string="Compute" type="object" class="btn-secondary" invisible="state != 'draft' or line_ids"/>
                     <button name="action_close_wizard" string="Close" type="object" class="btn-secondary" invisible="state != 'running'"/>
@@ -110,7 +111,7 @@
                         <button class="oe_stat_button" type="object" name="action_open_outstanding_lines" icon="fa-money">
                             <field name="outstanding_balance" string="Outstanding" widget="monetary"/>
                         </button>
-                        <button class="oe_stat_button" type="object" name="action_open_documents" icon="fa-file-text-o">
+                        <button class="oe_stat_button" type="object" name="action_open_documents" icon="fa-file-text-o" invisible="document_count == 0">
                             <field name="document_count" string="Documents" widget="statinfo"/>
                         </button>
                     </div>
@@ -214,10 +215,7 @@
         <field name="name">staff.loan.attachment.list</field>
         <field name="model">ir.attachment</field>
         <field name="arch" type="xml">
-            <list string="Documents" create="0" edit="0">
-                <header>
-                    <button name="%(action_staff_loan_document_upload)d" string="Upload" type="action" class="btn-primary" context="{'default_loan_id': context.get('default_loan_id')}"/>
-                </header>
+            <list string="Documents" edit="0">
                 <field name="name"/>
                 <field name="create_date"/>
                 <field name="create_uid"/>
@@ -233,17 +231,7 @@
         <field name="inherit_id" eval="False"/>
         <field name="mode">primary</field>
         <field name="arch" type="xml">
-            <kanban edit="false" import="false" create="0">
-                <header>
-                    <button
-                        name="%(action_staff_loan_document_upload)d"
-                        string="Upload"
-                        type="action"
-                        class="btn-primary o-kanban-button-new"
-                        display="always"
-                        context="{'default_loan_id': context.get('default_loan_id')}"
-                    />
-                </header>
+            <kanban edit="false" import="false">
                 <field name="id"/>
                 <field name="mimetype"/>
                 <field name="type"/>
@@ -281,22 +269,30 @@
         </field>
     </record>
 
+    <record id="view_staff_loan_attachment_form" model="ir.ui.view">
+        <field name="name">staff.loan.attachment.form</field>
+        <field name="model">ir.attachment</field>
+        <field name="arch" type="xml">
+            <form string="Upload Document">
+                <sheet>
+                    <group>
+                        <field name="type" invisible="1"/>
+                        <field name="res_model" invisible="1"/>
+                        <field name="res_id" invisible="1"/>
+                        <field name="company_id" invisible="1"/>
+                        <field name="name" invisible="1"/>
+                        <field name="datas" filename="name"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
     <record id="action_staff_loan_attachment" model="ir.actions.act_window">
         <field name="name">Documents</field>
         <field name="res_model">ir.attachment</field>
         <field name="view_mode">kanban,list,form</field>
-        <field name="views" eval="[(ref('view_staff_loan_attachment_kanban'), 'kanban'), (ref('view_staff_loan_attachment_list'), 'list'), (False, 'form')]"/>
-        <field name="context">{'create': False}</field>
-        <field name="help" type="html">
-            <div class="o_view_nocontent_smiling_face">
-                Upload the first document for this staff loan.
-            </div>
-            <p>
-                <a type="action" name="%(action_staff_loan_document_upload)d" class="btn btn-primary" data-context="{'default_loan_id': context.get('default_loan_id')}">
-                    Upload
-                </a>
-            </p>
-        </field>
+        <field name="views" eval="[(ref('view_staff_loan_attachment_kanban'), 'kanban'), (ref('view_staff_loan_attachment_list'), 'list'), (ref('view_staff_loan_attachment_form'), 'form')]"/>
     </record>
 
     <menuitem id="menu_staff_loan_root" name="Staff Loans" parent="accountant.account_assets_liabilities_menu" action="action_staff_loan" sequence="63" groups="account.group_account_readonly"/>
