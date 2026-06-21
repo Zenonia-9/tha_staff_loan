@@ -22,7 +22,7 @@ class AccountMove(models.Model):
     )
     staff_loan_due_date = fields.Date(
         related="staff_loan_line_id.due_date",
-        string="Due Date",
+        string="Repayment Due Date",
         store=True,
         readonly=True,
     )
@@ -54,6 +54,7 @@ class AccountMove(models.Model):
             move.staff_loan_settlement_amount = 0.0
             move.staff_loan_outstanding_balance = 0.0
         for loan in self.mapped("staff_loan_id"):
+            # Keep the outstanding list deterministic so the running balance matches the visible move order.
             outstanding = loan.total_payment
             moves = loan.line_ids.collection_move_ids.filtered(lambda move: move.state == "posted").sorted(
                 lambda move: (move.date, move.id)
