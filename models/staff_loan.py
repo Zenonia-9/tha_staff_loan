@@ -110,12 +110,6 @@ class StaffLoan(models.Model):
         tracking=True,
         domain="[('type', 'in', ('cash', 'bank', 'general')), ('company_id', '=', company_id)]",
     )
-    collection_journal_id = fields.Many2one(
-        "account.journal",
-        string="Collection Journal",
-        tracking=True,
-        domain="[('type', 'in', ('cash', 'bank', 'general')), ('company_id', '=', company_id)]",
-    )
     disbursement_account_id = fields.Many2one(
         "account.account",
         string="Disbursement Account",
@@ -149,11 +143,6 @@ class StaffLoan(models.Model):
         string="Collection Entries",
         compute="_compute_collection_move_ids",
     )
-    receivable_account_name = fields.Char(compute="_compute_account_names")
-    interest_income_account_name = fields.Char(compute="_compute_account_names")
-    disbursement_account_name = fields.Char(compute="_compute_account_names")
-    collection_account_name = fields.Char(compute="_compute_account_names")
-    writeoff_account_name = fields.Char(compute="_compute_account_names")
 
     approved_by_id = fields.Many2one("res.users", string="Approved By", readonly=True, copy=False)
     approval_date = fields.Date(readonly=True, copy=False)
@@ -261,21 +250,6 @@ class StaffLoan(models.Model):
             loan.posted_entry_count = len(moves.filtered(lambda move: move.state == "posted"))
             loan.document_count = loan.message_attachment_count
 
-    @api.depends(
-        "receivable_account_id",
-        "interest_income_account_id",
-        "disbursement_account_id",
-        "collection_account_id",
-        "writeoff_account_id",
-    )
-    def _compute_account_names(self):
-        for loan in self:
-            loan.receivable_account_name = loan.receivable_account_id.name or ""
-            loan.interest_income_account_name = loan.interest_income_account_id.name or ""
-            loan.disbursement_account_name = loan.disbursement_account_id.name or ""
-            loan.collection_account_name = loan.collection_account_id.name or ""
-            loan.writeoff_account_name = loan.writeoff_account_id.name or ""
-
     def _check_company_consistency(self):
         for loan in self:
             company = loan.company_id
@@ -317,7 +291,7 @@ class StaffLoan(models.Model):
 
     def _get_loan_journal(self):
         self.ensure_one()
-        return self.disbursement_journal_id or self.collection_journal_id
+        return self.disbursement_journal_id
 
     def action_compute_schedule(self):
         self.ensure_one()
@@ -486,17 +460,6 @@ class StaffLoan(models.Model):
         })
         loan.message_post(body=_("%s document(s) uploaded.", len(attachments)))
         return loan.action_open_documents()
-
-    def action_upload_document(self):
-        self.ensure_one()
-        return {
-            "type": "ir.actions.act_window",
-            "name": _("Upload Document"),
-            "res_model": "staff.loan.document.wizard",
-            "target": "new",
-            "views": [(False, "form")],
-            "context": {"default_loan_id": self.id},
-        }
 
     def action_open_outstanding_lines(self):
         self.ensure_one()

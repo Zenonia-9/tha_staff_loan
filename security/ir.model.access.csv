@@ -9,4 +9,3 @@ access_staff_loan_disburse_wizard,staff.loan.disburse.wizard,model_staff_loan_di
 access_staff_loan_collection_wizard,staff.loan.collection.wizard,model_staff_loan_collection_wizard,account.group_account_manager,1,1,1,1
 access_staff_loan_close_wizard,staff.loan.close.wizard,model_staff_loan_close_wizard,account.group_account_manager,1,1,1,1
 access_staff_loan_cancel_wizard,staff.loan.cancel.wizard,model_staff_loan_cancel_wizard,account.group_account_manager,1,1,1,1
-access_staff_loan_document_wizard,staff.loan.document.wizard,model_staff_loan_document_wizard,account.group_account_manager,1,1,1,1

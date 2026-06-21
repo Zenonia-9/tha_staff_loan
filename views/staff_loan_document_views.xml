@@ -1,0 +1,110 @@
+<odoo>
+    <record id="view_staff_loan_attachment_list" model="ir.ui.view">
+        <field name="name">staff.loan.attachment.list</field>
+        <field name="model">ir.attachment</field>
+        <field name="arch" type="xml">
+            <list string="Documents" edit="0" js_class="staff_loan_attachment_list">
+                <field name="name"/>
+                <field name="create_date"/>
+                <field name="create_uid"/>
+                <field name="file_size"/>
+                <field name="mimetype"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_attachment_kanban" model="ir.ui.view">
+        <field name="name">staff.loan.attachment.kanban</field>
+        <field name="model">ir.attachment</field>
+        <field name="inherit_id" eval="False"/>
+        <field name="mode">primary</field>
+        <field name="arch" type="xml">
+            <kanban edit="false" import="false" js_class="staff_loan_attachment_kanban">
+                <field name="id"/>
+                <field name="mimetype"/>
+                <field name="type"/>
+                <templates>
+                    <t t-name="menu">
+                        <a t-attf-href="/web/content/ir.attachment/#{record.id.raw_value}/datas?download=true" download="" class="dropdown-item">Download</a>
+                        <a t-if="widget.deletable" role="menuitem" type="delete" class="dropdown-item">Delete</a>
+                    </t>
+                    <t t-name="card" class="o_kanban_attachment flex-row">
+                        <aside class="o_kanban_image m-1">
+                            <div class="o_kanban_image_wrapper d-flex align-items-center justify-content-center">
+                                <t t-set="webimage" t-value="new RegExp('image.*(gif|jpeg|jpg|png|webp)').test(record.mimetype.value)"/>
+                                <div t-if="record.type.raw_value == 'url'" class="fa fa-link fa-3x text-muted" aria-label="Image is a link"/>
+                                <img t-elif="webimage" t-attf-src="/web/image/#{record.id.raw_value}" width="100" height="100" alt="Document" class="o_attachment_image"/>
+                                <div t-else="!webimage" class="o_image o_image_thumbnail" t-att-data-mimetype="record.mimetype.value"/>
+                            </div>
+                        </aside>
+                        <main class="ms-1">
+                            <div class="o_kanban_details_wrapper d-flex flex-column">
+                                <field name="name" class="text-truncate fw-bold fs-5"/>
+                                <div class="d-flex flex-grow-1 align-items-center">
+                                    <t t-if="record.type.raw_value == 'url'">
+                                        <i class="fa fa-globe" aria-label="Document url"/> <field name="url" widget="url"/>
+                                    </t>
+                                </div>
+                                <div class="d-flex">
+                                    <field name="create_date"/>
+                                    <field name="create_uid" widget="many2one_avatar_user" class="ms-auto"/>
+                                </div>
+                            </div>
+                        </main>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_attachment_form" model="ir.ui.view">
+        <field name="name">staff.loan.attachment.form</field>
+        <field name="model">ir.attachment</field>
+        <field name="arch" type="xml">
+            <form string="Upload Document">
+                <sheet>
+                    <field name="type" invisible="1"/>
+                    <field name="res_model" invisible="1"/>
+                    <field name="res_id" invisible="1"/>
+                    <field name="company_id" invisible="1"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1>
+                            <field name="name" placeholder="Document Name"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="datas" filename="name"/>
+                            <field name="mimetype" readonly="1"/>
+                            <field name="file_size" readonly="1"/>
+                        </group>
+                        <group string="Linked To">
+                            <field name="res_model" readonly="1"/>
+                            <field name="res_id" readonly="1"/>
+                            <field name="res_name" readonly="1"/>
+                            <field name="company_id" readonly="1" groups="base.group_multi_company"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="History">
+                            <field name="create_uid" readonly="1"/>
+                            <field name="create_date" readonly="1"/>
+                        </group>
+                    </group>
+                    <group invisible="not staff_loan_is_pdf">
+                        <field name="staff_loan_preview_html" widget="html" nolabel="1" readonly="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_staff_loan_attachment" model="ir.actions.act_window">
+        <field name="name">Documents</field>
+        <field name="res_model">ir.attachment</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="views" eval="[(ref('view_staff_loan_attachment_kanban'), 'kanban'), (ref('view_staff_loan_attachment_list'), 'list'), (ref('view_staff_loan_attachment_form'), 'form')]"/>
+        <field name="help" eval="False"/>
+    </record>
+</odoo>
