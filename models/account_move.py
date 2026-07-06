@@ -67,11 +67,9 @@ class AccountMove(models.Model):
     def _get_staff_loan_settlement_amount(self):
         self.ensure_one()
         loan = self.staff_loan_id
-        if not loan:
+        if not loan or not self.is_staff_loan_collection:
             return 0.0
-        settlement_lines = self.line_ids.filtered(
-            lambda line: line.account_id in (loan.receivable_account_id | loan.interest_income_account_id)
-        )
+        settlement_lines = self.line_ids.filtered(lambda line: line.account_id == loan.receivable_account_id)
         return sum(settlement_lines.mapped("credit"))
 
     def open_staff_loan(self):

@@ -126,13 +126,13 @@
                             <field name="branch_id"/>
                             <field name="loan_amount" readonly="state != 'draft'"/>
                             <field name="interest_type" readonly="state != 'draft'"/>
+                            <field name="payment_anchor" readonly="state != 'draft'"/>
                             <field name="interest_rate" readonly="state != 'draft'"/>
                             <field name="total_interest"/>
                             <field name="outstanding_balance"/>
                         </group>
                         <group>
                             <field name="loan_date" readonly="state != 'draft'"/>
-                            <field name="first_payment_date" readonly="state != 'draft'"/>
                             <label for="duration" string="Duration"/>
                             <div>
                                 <field name="duration" class="oe_inline" readonly="state != 'draft'"/>
@@ -140,7 +140,6 @@
                                 <span class="oe_inline" invisible="duration != 1"> month</span>
                             </div>
                             <field name="payment_frequency" readonly="state != 'draft'"/>
-                            <field name="payment_method" readonly="state != 'draft'"/>
                             <field name="disbursement_date" readonly="1"/>
                             <field name="reference"/>
                             <field name="company_id" readonly="state != 'draft'" groups="base.group_multi_company"/>
@@ -157,10 +156,11 @@
                                     <field name="interest_income_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
                                     <field name="disbursement_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
                                     <field name="collection_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
-                                    <field name="writeoff_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
+                                    <field name="deferred_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
                                 </group>
                                 <group>
                                     <field name="disbursement_journal_id" readonly="state not in ('draft', 'approved')"/>
+                                    <field name="collection_journal_id" readonly="state not in ('draft', 'approved')"/>
                                     <field name="disbursement_move_id"/>
                                 </group>
                             </group>
