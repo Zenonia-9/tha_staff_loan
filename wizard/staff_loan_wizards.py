@@ -266,7 +266,7 @@ class StaffLoanCollectionWizard(models.TransientModel):
         if loan:
             res.update({
                 "loan_id": loan.id,
-                "journal_id": loan.collection_journal_id.id or loan._get_loan_journal().id,
+                "journal_id": loan._get_loan_journal().id,
                 "reference": loan.reference or loan.name,
             })
         if line:

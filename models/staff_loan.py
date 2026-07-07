@@ -92,25 +92,19 @@ class StaffLoan(models.Model):
 
     receivable_account_id = fields.Many2one(
         "account.account",
-        string="Receivable",
+        string="Receivable Account",
         tracking=True,
         domain="[('account_type', 'in', ('asset_current', 'asset_receivable')), ('company_ids', 'in', company_id)]",
     )
     interest_income_account_id = fields.Many2one(
         "account.account",
-        string="Interest Income Account",
+        string="Income Account",
         tracking=True,
         domain="[('account_type', 'in', ('income', 'income_other')), ('company_ids', 'in', company_id)]",
     )
     disbursement_journal_id = fields.Many2one(
         "account.journal",
         string="Journal",
-        tracking=True,
-        domain="[('type', 'in', ('cash', 'bank', 'general')), ('company_id', '=', company_id)]",
-    )
-    collection_journal_id = fields.Many2one(
-        "account.journal",
-        string="Collection Journal",
         tracking=True,
         domain="[('type', 'in', ('cash', 'bank', 'general')), ('company_id', '=', company_id)]",
     )
@@ -183,7 +177,6 @@ class StaffLoan(models.Model):
             "receivable_account_id",
             "interest_income_account_id",
             "disbursement_journal_id",
-            "collection_journal_id",
             "disbursement_account_id",
             "collection_account_id",
             "deferred_account_id",
@@ -268,7 +261,7 @@ class StaffLoan(models.Model):
             for account in accounts:
                 if account and company not in account.company_ids:
                     raise UserError(_("Account %(account)s is not available for %(company)s.", account=account.display_name, company=company.display_name))
-            for journal in (loan.disbursement_journal_id | loan.collection_journal_id):
+            for journal in loan.disbursement_journal_id:
                 if journal and journal.company_id != company:
                     raise UserError(_("Journal %(journal)s does not belong to %(company)s.", journal=journal.display_name, company=company.display_name))
 
@@ -290,11 +283,9 @@ class StaffLoan(models.Model):
             if not loan.receivable_account_id:
                 raise UserError(_("Set the Staff Loan Receivable Account."))
             if not loan.interest_income_account_id:
-                raise UserError(_("Set the Interest Income Account."))
+                raise UserError(_("Set the Income Account."))
             if not loan.disbursement_journal_id:
-                raise UserError(_("Set the Disbursement Journal."))
-            if not loan.collection_journal_id:
-                raise UserError(_("Set the Collection Journal."))
+                raise UserError(_("Set the Journal."))
             if not loan.disbursement_account_id:
                 raise UserError(_("Set the Disbursement Account."))
             if not loan.collection_account_id:
@@ -306,10 +297,6 @@ class StaffLoan(models.Model):
     def _get_loan_journal(self):
         self.ensure_one()
         return self.disbursement_journal_id
-
-    def _get_collection_journal(self):
-        self.ensure_one()
-        return self.collection_journal_id or self.disbursement_journal_id
 
     def action_compute_schedule(self):
         self.ensure_one()
