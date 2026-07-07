@@ -108,6 +108,14 @@ class StaffLoan(models.Model):
         tracking=True,
         domain="[('type', 'in', ('cash', 'bank', 'general')), ('company_id', '=', company_id)]",
     )
+    # Backward-compatible alias so any stale metadata still resolves to the single journal field.
+    collection_journal_id = fields.Many2one(
+        "account.journal",
+        string="Collection Journal",
+        related="disbursement_journal_id",
+        readonly=False,
+        store=False,
+    )
     disbursement_account_id = fields.Many2one(
         "account.account",
         string="Disbursement Account",
