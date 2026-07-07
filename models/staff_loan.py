@@ -932,6 +932,7 @@ class StaffLoanLine(models.Model):
             partner=partner,
         )
         move.action_post()
+        self._post_interest_recognition_on_collection(date, journal, reference or loan.name, partner=partner)
         self.invalidate_recordset()
         loan.invalidate_recordset()
         loan.message_post(body=_(
@@ -959,6 +960,23 @@ class StaffLoanLine(models.Model):
             reference=reference or "-",
             reason=reason or "",
         ))
+
+    def _post_interest_recognition_on_collection(self, date, journal, reference, partner=False):
+        self.ensure_one()
+        recognition_move = self.generated_move_ids.filtered(
+            lambda move: move.state != "cancel" and not move.reversal_move_ids
+        )[:1]
+        if recognition_move and recognition_move.state == "posted":
+            return recognition_move
+        if not recognition_move:
+            recognition_move = self._create_interest_recognition_move(date, journal, reference, partner=partner)
+        else:
+            recognition_move.write({
+                "date": date,
+                "auto_post": "no",
+            })
+        recognition_move.action_post()
+        return recognition_move
 
     def _create_interest_recognition_move(self, date, journal, reference, partner=False):
         self.ensure_one()
