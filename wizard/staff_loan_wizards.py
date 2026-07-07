@@ -280,9 +280,85 @@ class StaffLoanCollectionWizard(models.TransientModel):
         self.ensure_one()
         if self.line_id.loan_id != self.loan_id:
             raise UserError(_("The selected installment does not belong to this loan."))
-        if float_compare(self.amount, self.line_id.open_amount, precision_rounding=self.currency_id.rounding) > 0:
-            raise UserError(_("Collection amount cannot exceed the installment open amount."))
+        if float_compare(self.amount, self.line_id.open_amount, precision_rounding=self.currency_id.rounding) != 0:
+            raise UserError(_("Collection amount must equal the full scheduled amount."))
         self.line_id._post_collection_move(self.collection_date, self.journal_id, self.amount, self.reference, self.remarks)
+        return {"type": "ir.actions.act_window_close"}
+
+
+class StaffLoanFullSettlementWizard(models.TransientModel):
+    _name = "staff.loan.full.settlement.wizard"
+    _description = "Staff Loan Full Settlement Wizard"
+
+    loan_id = fields.Many2one("staff.loan", required=True)
+    currency_id = fields.Many2one(related="loan_id.currency_id")
+    settlement_date = fields.Date(default=fields.Date.context_today, required=True)
+    journal_id = fields.Many2one("account.journal", required=True)
+    reference = fields.Char()
+    remarks = fields.Text()
+    outstanding_balance = fields.Monetary(related="loan_id.outstanding_balance", currency_field="currency_id")
+    remaining_deferred_interest = fields.Monetary(compute="_compute_remaining_deferred_interest", currency_field="currency_id")
+    affected_line_count = fields.Integer(compute="_compute_affected_line_count")
+
+    @api.model
+    def default_get(self, fields_list):
+        res = super().default_get(fields_list)
+        loan = self.env["staff.loan"].browse(self.env.context.get("default_loan_id"))
+        if loan:
+            res.update({
+                "loan_id": loan.id,
+                "journal_id": loan._get_loan_journal().id,
+                "reference": loan.reference or loan.name,
+            })
+        return res
+
+    @api.depends("loan_id")
+    def _compute_remaining_deferred_interest(self):
+        for wizard in self:
+            wizard.remaining_deferred_interest = wizard.loan_id._get_remaining_deferred_interest()
+
+    @api.depends("loan_id")
+    def _compute_affected_line_count(self):
+        for wizard in self:
+            wizard.affected_line_count = len(wizard.loan_id._get_settlement_lines())
+
+    def action_settle(self):
+        self.ensure_one()
+        self.loan_id._post_full_settlement(self.settlement_date, self.journal_id, self.reference, self.remarks)
+        return {"type": "ir.actions.act_window_close"}
+
+
+class StaffLoanExceptionWizard(models.TransientModel):
+    _name = "staff.loan.exception.wizard"
+    _description = "Staff Loan Manual Exception Wizard"
+
+    loan_id = fields.Many2one("staff.loan", required=True)
+    line_id = fields.Many2one("staff.loan.line", required=True)
+    currency_id = fields.Many2one(related="loan_id.currency_id")
+    exception_date = fields.Date(default=fields.Date.context_today, required=True)
+    exception_amount = fields.Monetary(required=True)
+    manual_entry_ref = fields.Char(required=True)
+    reason = fields.Text(required=True)
+
+    @api.model
+    def default_get(self, fields_list):
+        res = super().default_get(fields_list)
+        loan = self.env["staff.loan"].browse(self.env.context.get("default_loan_id"))
+        line = self.env["staff.loan.line"].browse(self.env.context.get("default_line_id"))
+        if loan:
+            res["loan_id"] = loan.id
+        if line:
+            res.update({
+                "line_id": line.id,
+                "exception_amount": line.open_amount,
+            })
+        return res
+
+    def action_apply_exception(self):
+        self.ensure_one()
+        if self.line_id.loan_id != self.loan_id:
+            raise UserError(_("The selected installment does not belong to this loan."))
+        self.line_id._mark_manual_exception(self.exception_amount, self.manual_entry_ref, self.reason, self.exception_date)
         return {"type": "ir.actions.act_window_close"}
 
 

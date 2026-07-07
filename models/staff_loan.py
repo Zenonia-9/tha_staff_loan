@@ -144,11 +144,7 @@ class StaffLoan(models.Model):
         readonly=True,
         copy=False,
     )
-    collection_move_ids = fields.Many2many(
-        "account.move",
-        string="Collection Entries",
-        compute="_compute_collection_move_ids",
-    )
+    collection_move_ids = fields.Many2many("account.move", string="Collection Entries", compute="_compute_collection_move_ids")
     approved_by_id = fields.Many2one("res.users", string="Approved By", readonly=True, copy=False)
     approval_date = fields.Date(readonly=True, copy=False)
     approval_remarks = fields.Text(readonly=True, copy=False)
@@ -216,7 +212,15 @@ class StaffLoan(models.Model):
             if loan.interest_rate < 0:
                 raise ValidationError(_("Interest rate cannot be negative."))
 
-    @api.depends("line_ids.interest", "line_ids.payment", "line_ids.paid_principal", "line_ids.paid_interest", "line_ids.paid_amount")
+    @api.depends(
+        "line_ids.interest",
+        "line_ids.payment",
+        "line_ids.paid_principal",
+        "line_ids.paid_interest",
+        "line_ids.paid_amount",
+        "line_ids.open_amount",
+        "line_ids.state",
+    )
     def _compute_totals(self):
         for loan in self:
             loan.total_interest = sum(loan.line_ids.mapped("interest"))
@@ -224,18 +228,22 @@ class StaffLoan(models.Model):
             loan.paid_principal = sum(loan.line_ids.mapped("paid_principal"))
             loan.paid_interest = sum(loan.line_ids.mapped("paid_interest"))
             loan.paid_amount = sum(loan.line_ids.mapped("paid_amount"))
-            loan.outstanding_principal = max(loan.loan_amount - loan.paid_principal, 0.0)
-            loan.outstanding_interest = max(loan.total_interest - loan.paid_interest, 0.0)
-            loan.outstanding_balance = max(loan.total_payment - loan.paid_amount, 0.0)
+            unpaid_lines = loan.line_ids.filtered(lambda line: line.state == "unpaid")
+            loan.outstanding_principal = sum(max(line.principal - line.paid_principal, 0.0) for line in unpaid_lines)
+            loan.outstanding_interest = sum(max(line.interest - line.paid_interest, 0.0) for line in unpaid_lines)
+            loan.outstanding_balance = sum(unpaid_lines.mapped("open_amount"))
 
-    @api.depends("line_ids.collection_move_ids")
+    @api.depends("line_ids.collection_move_ids", "line_ids.collection_move_ids.state", "line_ids.collection_move_ids.reversal_move_ids")
     def _compute_collection_move_ids(self):
         for loan in self:
-            loan.collection_move_ids = loan.line_ids.collection_move_ids
+            loan.collection_move_ids = self.env["account.move"].search([
+                ("staff_loan_id", "=", loan.id),
+                ("is_staff_loan_collection", "=", True),
+            ])
 
     def _get_entry_moves(self):
         self.ensure_one()
-        return self.disbursement_move_id | self.line_ids.generated_move_ids | self.line_ids.collection_move_ids
+        return self.env["account.move"].search([("staff_loan_id", "=", self.id)])
 
     @api.depends(
         "line_ids.state",
@@ -251,10 +259,15 @@ class StaffLoan(models.Model):
         for loan in self:
             loan.installment_count = len(loan.line_ids)
             loan.paid_installment_count = len(loan.line_ids.filtered(lambda line: line.state == "paid"))
-            loan.remaining_installment_count = len(loan.line_ids.filtered(lambda line: line.state != "paid"))
+            loan.remaining_installment_count = len(loan.line_ids.filtered(lambda line: line.state == "unpaid"))
             moves = loan._get_entry_moves()
             loan.posted_entry_count = len(moves.filtered(lambda move: move.state == "posted"))
             loan.document_count = loan.message_attachment_count
+
+    def _sync_runtime_state(self):
+        for loan in self:
+            if loan.state == "closed" and any(line.state == "unpaid" for line in loan.line_ids):
+                loan.state = "running"
 
     def _check_company_consistency(self):
         for loan in self:
@@ -375,6 +388,21 @@ class StaffLoan(models.Model):
             "context": {"default_loan_id": self.id},
         }
 
+    def action_full_settlement_wizard(self):
+        self.ensure_one()
+        if self.state not in ("running", "disbursed"):
+            raise UserError(_("Full settlement is allowed only after disbursement."))
+        if float_is_zero(self.outstanding_balance, precision_rounding=self.currency_id.rounding):
+            raise UserError(_("There is no outstanding balance to settle."))
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Full Settlement"),
+            "res_model": "staff.loan.full.settlement.wizard",
+            "target": "new",
+            "views": [(False, "form")],
+            "context": {"default_loan_id": self.id},
+        }
+
     def action_close_wizard(self):
         self.ensure_one()
         if self.state != "running":
@@ -487,7 +515,7 @@ class StaffLoan(models.Model):
 
     def action_open_outstanding_lines(self):
         self.ensure_one()
-        moves = self.line_ids.collection_move_ids.filtered(lambda move: move.state == "posted")
+        moves = self.collection_move_ids.filtered(lambda move: move.state == "posted")
         return {
             "type": "ir.actions.act_window",
             "name": _("Outstanding Balance"),
@@ -558,6 +586,27 @@ class StaffLoan(models.Model):
         self.message_post(body=_("Loan disbursed on %(date)s. %(remarks)s", date=date, remarks=remarks or ""))
         return move
 
+    def _get_collectible_lines(self):
+        self.ensure_one()
+        return self.line_ids.filtered(lambda line: line.state == "unpaid").sorted("due_date")
+
+    def _get_settlement_lines(self):
+        self.ensure_one()
+        return self.line_ids.filtered(lambda line: line.state == "unpaid").sorted("due_date")
+
+    def _get_tracked_receivable_amount(self):
+        self.ensure_one()
+        return sum(line.payment if not line.is_exception else min(line.exception_amount, line.payment) for line in self.line_ids)
+
+    def _get_remaining_deferred_interest(self):
+        self.ensure_one()
+        remaining_interest = 0.0
+        for line in self._get_settlement_lines():
+            effective_moves = line.generated_move_ids.filtered(lambda move: move.state == "posted" and not move.reversal_move_ids)
+            if not effective_moves:
+                remaining_interest += line.interest
+        return self.currency_id.round(remaining_interest)
+
     def _create_interest_recognition_moves(self):
         for loan in self:
             loan._require_accounting_settings()
@@ -577,15 +626,106 @@ class StaffLoan(models.Model):
         self.ensure_one()
         if self.state not in ("running", "disbursed"):
             raise UserError(_("Collections are allowed only after disbursement."))
-        line = self.line_ids.filtered(lambda item: item.state in ("overdue", "partial", "open"))[:1]
+        line = self._get_collectible_lines()[:1]
         if not line:
-            raise UserError(_("There is no open installment to collect."))
+            raise UserError(_("There is no unpaid installment to collect."))
         return line.action_collect_wizard()
 
     def _refresh_state_after_collection(self):
         for loan in self:
-            if loan.state in ("running", "disbursed") and loan.line_ids and all(line.state == "paid" for line in loan.line_ids):
+            if loan.state in ("running", "disbursed") and loan.line_ids and all(line.state != "unpaid" for line in loan.line_ids):
                 loan.state = "running"
+
+    def _create_full_settlement_collection_move(self, date, journal, amount, reference, remarks):
+        self.ensure_one()
+        partner = self.employee_id.work_contact_id or self.employee_id.user_id.partner_id
+        if float_is_zero(amount, precision_rounding=self.currency_id.rounding):
+            return self.env["account.move"]
+        move = self.env["account.move"].with_company(self.company_id).create({
+            "company_id": self.company_id.id,
+            "date": date,
+            "journal_id": journal.id,
+            "ref": _("%(loan)s - Full Settlement", loan=reference or self.name),
+            "staff_loan_id": self.id,
+            "is_staff_loan_collection": True,
+            "is_staff_loan_full_settlement": True,
+            "line_ids": [
+                self._make_move_line_vals(
+                    self.collection_account_id,
+                    debit=amount,
+                    name=_("%s - Full Settlement") % self.name,
+                    partner=partner,
+                ),
+                self._make_move_line_vals(
+                    self.receivable_account_id,
+                    credit=amount,
+                    name=_("%s - Receivable Settlement") % self.name,
+                    partner=partner,
+                ),
+            ],
+        })
+        move.action_post()
+        self.message_post(body=_("Full settlement posted on %(date)s. %(remarks)s", date=date, remarks=remarks or ""))
+        return move
+
+    def _create_full_settlement_recognition_move(self, date, journal, amount, reference):
+        self.ensure_one()
+        partner = self.employee_id.work_contact_id or self.employee_id.user_id.partner_id
+        if float_is_zero(amount, precision_rounding=self.currency_id.rounding):
+            return self.env["account.move"]
+        move = self.env["account.move"].with_company(self.company_id).create({
+            "company_id": self.company_id.id,
+            "date": date,
+            "journal_id": journal.id,
+            "ref": _("%(loan)s - Final Interest Recognition", loan=reference or self.name),
+            "staff_loan_id": self.id,
+            "is_staff_loan_repayment_move": True,
+            "is_staff_loan_settlement_recognition": True,
+            "line_ids": [
+                self._make_move_line_vals(
+                    self.deferred_account_id,
+                    debit=amount,
+                    name=_("%s - Final Deferred Interest") % self.name,
+                    partner=partner,
+                ),
+                self._make_move_line_vals(
+                    self.interest_income_account_id,
+                    credit=amount,
+                    name=_("%s - Final Interest Income") % self.name,
+                    partner=partner,
+                ),
+            ],
+        })
+        move.action_post()
+        return move
+
+    def _post_full_settlement(self, date, journal, reference, remarks):
+        self.ensure_one()
+        self._require_accounting_settings()
+        if self.state not in ("running", "disbursed"):
+            raise UserError(_("Full settlement is allowed only after disbursement."))
+        settlement_lines = self._get_settlement_lines()
+        if not settlement_lines:
+            raise UserError(_("There are no unpaid installments to settle."))
+        settlement_amount = self.currency_id.round(sum(settlement_lines.mapped("open_amount")))
+        remaining_deferred_interest = self._get_remaining_deferred_interest()
+        settlement_move = self._create_full_settlement_collection_move(date, journal, settlement_amount, reference, remarks)
+        recognition_move = self._create_full_settlement_recognition_move(date, journal, remaining_deferred_interest, reference)
+        settlement_lines.write({"settlement_move_id": settlement_move.id})
+        settlement_lines.generated_move_ids.filtered(lambda move: move.state != "posted").unlink()
+        self.write({
+            "state": "closed",
+            "close_date": date,
+            "close_remarks": remarks,
+        })
+        self.message_post(body=_(
+            "Loan fully settled on %(date)s. Settlement %(amount)s. Remaining deferred interest %(interest)s recognized.",
+            date=date,
+            amount=self.currency_id.format(settlement_amount),
+            interest=self.currency_id.format(remaining_deferred_interest),
+        ))
+        self.invalidate_recordset()
+        return settlement_move | recognition_move
 
 
 class StaffLoanLine(models.Model):
@@ -603,22 +743,26 @@ class StaffLoanLine(models.Model):
     interest = fields.Monetary(required=True)
     payment = fields.Monetary(compute="_compute_amounts", store=True)
     balance = fields.Monetary(string="Remaining Balance")
+    is_exception = fields.Boolean(default=False, copy=False)
+    exception_amount = fields.Monetary(copy=False)
+    exception_reference = fields.Char(copy=False)
+    exception_reason = fields.Text(copy=False)
+    exception_date = fields.Date(copy=False)
+    settlement_move_id = fields.Many2one("account.move", copy=False, readonly=True)
+    is_overdue = fields.Boolean(compute="_compute_is_overdue")
     paid_principal = fields.Monetary(compute="_compute_paid_amounts", store=True)
     paid_interest = fields.Monetary(compute="_compute_paid_amounts", store=True)
     paid_amount = fields.Monetary(compute="_compute_paid_amounts", store=True)
     open_amount = fields.Monetary(compute="_compute_paid_amounts", store=True)
     state = fields.Selection(
         [
-            ("open", "Open"),
-            ("partial", "Partial"),
+            ("unpaid", "Unpaid"),
             ("paid", "Paid"),
-            ("overdue", "Overdue"),
+            ("exception", "Exception"),
         ],
         string="Status",
         compute="_compute_state",
         store=True,
-        readonly=False,
-        default="open",
     )
     collection_move_ids = fields.One2many(
         "account.move",
@@ -663,51 +807,80 @@ class StaffLoanLine(models.Model):
 
     def _get_posted_payment_moves(self):
         self.ensure_one()
-        return self.collection_move_ids.filtered(lambda move: move.state == "posted")
+        return self.collection_move_ids.filtered(lambda move: move.state == "posted" and not move.reversal_move_ids)
+
+    def _get_effective_settlement_move(self):
+        self.ensure_one()
+        if self.settlement_move_id and self.settlement_move_id.state == "posted" and not self.settlement_move_id.reversal_move_ids:
+            return self.settlement_move_id
+        return self.env["account.move"]
 
     @api.depends(
+        "is_exception",
+        "exception_amount",
         "collection_move_ids.state",
+        "collection_move_ids.reversal_move_ids",
         "collection_move_ids.line_ids.debit",
         "collection_move_ids.line_ids.credit",
+        "settlement_move_id.state",
+        "settlement_move_id.reversal_move_ids",
     )
     def _compute_paid_amounts(self):
         for line in self:
-            paid_amount = 0.0
-            for move in line._get_posted_payment_moves():
-                paid_amount += sum(move.line_ids.filtered(lambda item: item.account_id == line.loan_id.receivable_account_id).mapped("credit"))
-            paid_amount = min(paid_amount, line.payment)
+            if line.is_exception:
+                paid_amount = min(line.exception_amount, line.payment)
+                open_amount = 0.0
+            elif line._get_effective_settlement_move():
+                paid_amount = line.payment
+                open_amount = 0.0
+            else:
+                paid_amount = 0.0
+                for move in line._get_posted_payment_moves():
+                    paid_amount += sum(move.line_ids.filtered(lambda item: item.account_id == line.loan_id.receivable_account_id).mapped("credit"))
+                paid_amount = min(paid_amount, line.payment)
+                open_amount = max(line.payment - paid_amount, 0.0)
             paid_principal = min(paid_amount, line.principal)
             paid_interest = min(max(paid_amount - paid_principal, 0.0), line.interest)
             line.paid_principal = line.currency_id.round(paid_principal)
             line.paid_interest = line.currency_id.round(paid_interest)
             line.paid_amount = line.currency_id.round(paid_amount)
-            line.open_amount = max(line.payment - line.paid_amount, 0.0)
+            line.open_amount = line.currency_id.round(open_amount)
 
     @api.depends("generated_move_ids.state")
     def _compute_is_repayment_move_posted(self):
         for line in self:
             line.is_repayment_move_posted = any(move.state == "posted" for move in line.generated_move_ids)
 
-    @api.depends("paid_amount", "payment", "due_date")
+    @api.depends(
+        "is_exception",
+        "open_amount",
+        "collection_move_ids.state",
+        "collection_move_ids.reversal_move_ids",
+        "settlement_move_id.state",
+        "settlement_move_id.reversal_move_ids",
+    )
     def _compute_state(self):
-        today = fields.Date.context_today(self)
         for line in self:
             rounding = line.currency_id.rounding or 0.01
-            if float_is_zero(line.open_amount, precision_rounding=rounding):
+            if line.is_exception:
+                line.state = "exception"
+            elif float_is_zero(line.open_amount, precision_rounding=rounding):
                 line.state = "paid"
-            elif line.paid_amount:
-                line.state = "partial"
-            elif line.due_date and line.due_date < today:
-                line.state = "overdue"
             else:
-                line.state = "open"
+                line.state = "unpaid"
+
+    @api.depends("due_date", "state")
+    def _compute_is_overdue(self):
+        today = fields.Date.context_today(self)
+        for line in self:
+            line.is_overdue = bool(line.due_date and line.state == "unpaid" and line.due_date < today)
 
     def action_collect_wizard(self):
         self.ensure_one()
         if self.loan_id.state not in ("running", "disbursed"):
             raise UserError(_("Collections are allowed only after disbursement."))
-        if self.state == "paid":
-            raise UserError(_("This installment is already paid."))
+        if self.state != "unpaid":
+            raise UserError(_("Only unpaid installments can be collected."))
         return {
             "type": "ir.actions.act_window",
             "name": _("Register Collection"),
@@ -721,14 +894,35 @@ class StaffLoanLine(models.Model):
             },
         }
 
+    def action_manual_exception_wizard(self):
+        self.ensure_one()
+        if self.loan_id.state not in ("running", "disbursed"):
+            raise UserError(_("Manual exceptions are allowed only after disbursement."))
+        if self.state == "paid":
+            raise UserError(_("This installment is already paid."))
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Manual Exception"),
+            "res_model": "staff.loan.exception.wizard",
+            "target": "new",
+            "views": [(False, "form")],
+            "context": {
+                "default_loan_id": self.loan_id.id,
+                "default_line_id": self.id,
+                "default_exception_amount": self.open_amount,
+            },
+        }
+
     def _post_collection_move(self, date, journal, amount, reference, remarks):
         self.ensure_one()
         loan = self.loan_id
         loan._require_accounting_settings()
+        if self.state != "unpaid":
+            raise UserError(_("Only unpaid installments can be collected."))
         if amount <= 0:
             raise UserError(_("Collection amount must be positive."))
-        if float_compare(amount, self.open_amount, precision_rounding=self.currency_id.rounding) > 0:
-            raise UserError(_("Collection amount cannot exceed the installment open amount."))
+        if float_compare(amount, self.open_amount, precision_rounding=self.currency_id.rounding) != 0:
+            raise UserError(_("Collection amount must exactly match the full scheduled amount."))
         partner = loan.employee_id.work_contact_id or loan.employee_id.user_id.partner_id
         move = self._create_collection_move(
             date,
@@ -748,6 +942,23 @@ class StaffLoanLine(models.Model):
         ))
         loan._refresh_state_after_collection()
         return move
+
+    def _mark_manual_exception(self, amount, reference, reason, date=False):
+        self.ensure_one()
+        self.write({
+            "is_exception": True,
+            "exception_amount": amount,
+            "exception_reference": reference,
+            "exception_reason": reason,
+            "exception_date": date or fields.Date.context_today(self),
+        })
+        self.loan_id.message_post(body=_(
+            "Installment due on %(date)s marked as manual exception. Amount %(amount)s. Ref %(reference)s. %(reason)s",
+            date=self.due_date,
+            amount=self.loan_id.currency_id.format(amount),
+            reference=reference or "-",
+            reason=reason or "",
+        ))
 
     def _create_interest_recognition_move(self, date, journal, reference, partner=False):
         self.ensure_one()

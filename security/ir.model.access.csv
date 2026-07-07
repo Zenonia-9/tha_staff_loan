@@ -7,6 +7,8 @@ access_staff_loan_compute_wizard,staff.loan.compute.wizard,model_staff_loan_comp
 access_staff_loan_approve_wizard,staff.loan.approve.wizard,model_staff_loan_approve_wizard,account.group_account_manager,1,1,1,1
 access_staff_loan_disburse_wizard,staff.loan.disburse.wizard,model_staff_loan_disburse_wizard,account.group_account_manager,1,1,1,1
 access_staff_loan_collection_wizard,staff.loan.collection.wizard,model_staff_loan_collection_wizard,account.group_account_manager,1,1,1,1
+access_staff_loan_full_settlement_wizard,staff.loan.full.settlement.wizard,model_staff_loan_full_settlement_wizard,account.group_account_manager,1,1,1,1
+access_staff_loan_exception_wizard,staff.loan.exception.wizard,model_staff_loan_exception_wizard,account.group_account_manager,1,1,1,1
 access_staff_loan_close_wizard,staff.loan.close.wizard,model_staff_loan_close_wizard,account.group_account_manager,1,1,1,1
 access_staff_loan_cancel_wizard,staff.loan.cancel.wizard,model_staff_loan_cancel_wizard,account.group_account_manager,1,1,1,1
 access_staff_loan_document_wizard,staff.loan.document.wizard,model_staff_loan_document_wizard,account.group_account_manager,1,1,1,1
