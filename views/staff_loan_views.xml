@@ -96,6 +96,7 @@
                     <button name="action_reset" string="Reset" type="object" class="btn-secondary" invisible="state != 'draft' or not line_ids"/>
                     <button name="action_approve_wizard" string="Approve" type="object" class="btn-primary" invisible="state != 'draft'"/>
                     <button name="action_disburse_wizard" string="Disburse" type="object" class="btn-primary" invisible="state != 'approved'"/>
+                    <button name="action_update_exception_schedule" string="Update Schedule" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed') or not exception_update_pending"/>
                     <button name="action_full_settlement_wizard" string="Full Settlement" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed') or outstanding_balance == 0"/>
                     <button name="action_compute_schedule" string="Compute" type="object" class="btn-secondary" invisible="state != 'draft' or line_ids"/>
                     <button name="action_close_wizard" string="Close" type="object" class="btn-secondary" invisible="state != 'running'"/>
@@ -105,6 +106,7 @@
                     <field name="state" widget="statusbar" statusbar_visible="draft,approved,disbursed,running,closed,cancelled"/>
                 </header>
                 <sheet>
+                    <field name="exception_update_pending" invisible="1"/>
                     <div class="oe_button_box" name="button_box">
                         <button class="oe_stat_button" type="object" name="action_open_entries" icon="fa-bars">
                             <field name="posted_entry_count" string="Posted Entries" widget="statinfo"/>

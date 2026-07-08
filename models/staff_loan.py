@@ -166,6 +166,7 @@ class StaffLoan(models.Model):
     remaining_installment_count = fields.Integer(compute="_compute_counts")
     posted_entry_count = fields.Integer(compute="_compute_counts")
     document_count = fields.Integer(compute="_compute_counts")
+    exception_update_pending = fields.Boolean(compute="_compute_exception_update_pending")
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -228,10 +229,23 @@ class StaffLoan(models.Model):
             loan.paid_principal = sum(loan.line_ids.mapped("paid_principal"))
             loan.paid_interest = sum(loan.line_ids.mapped("paid_interest"))
             loan.paid_amount = sum(loan.line_ids.mapped("paid_amount"))
-            unpaid_lines = loan.line_ids.filtered(lambda line: line.state == "unpaid")
-            loan.outstanding_principal = sum(max(line.principal - line.paid_principal, 0.0) for line in unpaid_lines)
-            loan.outstanding_interest = sum(max(line.interest - line.paid_interest, 0.0) for line in unpaid_lines)
-            loan.outstanding_balance = sum(unpaid_lines.mapped("open_amount"))
+            open_lines = loan.line_ids.filtered(
+                lambda line: line.state in ("unpaid", "exception")
+                and not float_is_zero(line.open_amount, precision_rounding=line.currency_id.rounding)
+            )
+            loan.outstanding_principal = sum(
+                line._get_exception_remaining_principal_value()
+                if line.state == "exception" and not line.exception_schedule_updated
+                else max(line.principal - line.paid_principal, 0.0)
+                for line in open_lines
+            )
+            loan.outstanding_interest = sum(
+                0.0
+                if line.state == "exception" and not line.exception_schedule_updated
+                else max(line.interest - line.paid_interest, 0.0)
+                for line in open_lines
+            )
+            loan.outstanding_balance = sum(open_lines.mapped("open_amount"))
 
     @api.depends("line_ids.collection_move_ids", "line_ids.collection_move_ids.state", "line_ids.collection_move_ids.reversal_move_ids")
     def _compute_collection_move_ids(self):
@@ -263,6 +277,16 @@ class StaffLoan(models.Model):
             moves = loan._get_entry_moves()
             loan.posted_entry_count = len(moves.filtered(lambda move: move.state == "posted"))
             loan.document_count = loan.message_attachment_count
+
+    @api.depends(
+        "line_ids.state",
+        "line_ids.due_date",
+        "line_ids.exception_schedule_updated",
+        "line_ids.exception_remaining_principal",
+    )
+    def _compute_exception_update_pending(self):
+        for loan in self:
+            loan.exception_update_pending = bool(loan._get_exception_anchor_line())
 
     def _sync_runtime_state(self):
         for loan in self:
@@ -392,6 +416,8 @@ class StaffLoan(models.Model):
         self.ensure_one()
         if self.state not in ("running", "disbursed"):
             raise UserError(_("Full settlement is allowed only after disbursement."))
+        if self.exception_update_pending:
+            raise UserError(_("Update the repayment schedule for the latest exception before full settlement."))
         if float_is_zero(self.outstanding_balance, precision_rounding=self.currency_id.rounding):
             raise UserError(_("There is no outstanding balance to settle."))
         return {
@@ -407,6 +433,8 @@ class StaffLoan(models.Model):
         self.ensure_one()
         if self.state != "running":
             raise UserError(_("Only running loans can be closed."))
+        if self.exception_update_pending:
+            raise UserError(_("Update the repayment schedule for the latest exception before closing the loan."))
         return {
             "type": "ir.actions.act_window",
             "name": _("Close Staff Loan"),
@@ -419,19 +447,13 @@ class StaffLoan(models.Model):
     def action_cancel(self):
         self.ensure_one()
         if self.state != "running":
-            raise UserError(_("Only running loans can be cancelled directly."))
-        (
-            self.disbursement_move_id
-            | self.line_ids.generated_move_ids
-            | self.line_ids.collection_move_ids
-        ).filtered(lambda move: move.state != "cancel")._unlink_or_reverse()
-        self.state = "cancelled"
-        self.message_post(body=_("Loan cancelled."))
+            raise UserError(_("Only running loans can be cancelled from this action."))
+        return self.action_cancel_wizard()
 
     def action_cancel_wizard(self):
         self.ensure_one()
-        if self.state not in ("draft", "approved"):
-            raise UserError(_("Only Draft or Approved loans can be cancelled directly."))
+        if self.state not in ("draft", "approved", "running"):
+            raise UserError(_("Only Draft, Approved, or Running loans can be cancelled."))
         return {
             "type": "ir.actions.act_window",
             "name": _("Cancel Staff Loan"),
@@ -592,11 +614,21 @@ class StaffLoan(models.Model):
 
     def _get_settlement_lines(self):
         self.ensure_one()
-        return self.line_ids.filtered(lambda line: line.state == "unpaid").sorted("due_date")
+        return self.line_ids.filtered(
+            lambda line: line.state == "unpaid"
+            or (
+                line.state == "exception"
+                and not line.exception_schedule_updated
+                and not float_is_zero(line.open_amount, precision_rounding=line.currency_id.rounding)
+            )
+        ).sorted("due_date")
 
     def _get_tracked_receivable_amount(self):
         self.ensure_one()
-        return sum(line.payment if not line.is_exception else min(line.exception_amount, line.payment) for line in self.line_ids)
+        return sum(self.line_ids.mapped("payment")) + sum(
+            line._get_exception_remaining_principal_value()
+            for line in self.line_ids.filtered(lambda line: line.is_exception and not line.exception_schedule_updated)
+        )
 
     def _get_remaining_deferred_interest(self):
         self.ensure_one()
@@ -621,6 +653,130 @@ class StaffLoan(models.Model):
                 )
                 if move and move.date <= fields.Date.context_today(self):
                     move.action_post()
+
+    def _round_schedule_values(self, values, principal_amount, total_interest):
+        self.ensure_one()
+        if not values:
+            return values
+        principal_diff = self.currency_id.round(principal_amount - sum(item["principal"] for item in values))
+        interest_diff = self.currency_id.round(total_interest - sum(item["interest"] for item in values))
+        values[-1]["principal"] = self.currency_id.round(values[-1]["principal"] + principal_diff)
+        values[-1]["interest"] = self.currency_id.round(values[-1]["interest"] + interest_diff)
+        values[-1]["payment"] = self.currency_id.round(values[-1]["principal"] + values[-1]["interest"])
+        values[-1]["balance"] = 0.0
+        return values
+
+    def _get_schedule_values_for_amount(self, principal_amount, due_dates):
+        self.ensure_one()
+        duration = len(due_dates)
+        if duration <= 0:
+            return []
+        if self.interest_type == "emi":
+            monthly_rate = self.interest_rate / 12.0 / 100.0
+            balance = principal_amount
+            if float_is_zero(monthly_rate, precision_digits=12):
+                emi_amount = principal_amount / duration
+            else:
+                factor = (1 + monthly_rate) ** duration
+                emi_amount = (principal_amount * monthly_rate * factor) / (factor - 1)
+            values = []
+            for index, due_date in enumerate(due_dates):
+                interest = balance * monthly_rate
+                principal = emi_amount - interest
+                if index == duration - 1:
+                    principal = balance
+                    interest = emi_amount - principal if not float_is_zero(monthly_rate, precision_digits=12) else 0.0
+                balance -= principal
+                values.append({
+                    "due_date": due_date,
+                    "principal": self.currency_id.round(principal),
+                    "interest": self.currency_id.round(interest),
+                    "payment": self.currency_id.round(principal + interest),
+                    "balance": self.currency_id.round(max(balance, 0.0)),
+                })
+            total_interest = sum(item["interest"] for item in values)
+            return self._round_schedule_values(values, principal_amount, total_interest)
+
+        total_interest = principal_amount * self.interest_rate / 100.0
+        principal_per_line = principal_amount / duration
+        interest_per_line = total_interest / duration
+        balance = principal_amount
+        values = []
+        for index, due_date in enumerate(due_dates):
+            principal = principal_per_line
+            if index == duration - 1:
+                principal = balance
+            balance -= principal
+            values.append({
+                "due_date": due_date,
+                "principal": self.currency_id.round(principal),
+                "interest": self.currency_id.round(interest_per_line),
+                "payment": self.currency_id.round(principal + interest_per_line),
+                "balance": self.currency_id.round(max(balance, 0.0)),
+            })
+        return self._round_schedule_values(values, principal_amount, total_interest)
+
+    def _get_exception_anchor_line(self):
+        self.ensure_one()
+        exception_lines = self.line_ids.filtered(
+            lambda line: line.is_exception
+            and not line.exception_schedule_updated
+            and not float_is_zero(line._get_exception_remaining_principal_value(), precision_rounding=line.currency_id.rounding)
+        )
+        for line in sorted(exception_lines, key=lambda item: (item.due_date, item.id), reverse=True):
+            if self.line_ids.filtered(lambda item: item.state == "unpaid" and item.due_date > line.due_date):
+                return line
+        return self.env["staff.loan.line"]
+
+    def action_update_exception_schedule(self):
+        self.ensure_one()
+        if self.state not in ("running", "disbursed"):
+            raise UserError(_("Schedule updates are allowed only after disbursement."))
+        anchor_line = self._get_exception_anchor_line()
+        if not anchor_line:
+            raise UserError(_("There is no exception line waiting for a future schedule update."))
+        future_lines = self.line_ids.filtered(lambda line: line.state == "unpaid" and line.due_date > anchor_line.due_date).sorted("due_date")
+        if not future_lines:
+            raise UserError(_("There are no future unpaid installments to update."))
+        anchor_line._normalize_exception_values()
+        posted_future_moves = future_lines.generated_move_ids.filtered(lambda move: move.state == "posted" and not move.reversal_move_ids)
+        if posted_future_moves:
+            raise UserError(_("Future posted interest recognition entries must be adjusted manually before updating the schedule."))
+        principal_amount = anchor_line.exception_remaining_principal + sum(future_lines.mapped("principal"))
+        schedule_values = self._get_schedule_values_for_amount(principal_amount, future_lines.mapped("due_date"))
+        future_lines.generated_move_ids.filtered(lambda move: move.state != "posted").unlink()
+        for line, values in zip(future_lines, schedule_values):
+            line.write({
+                "principal": values["principal"],
+                "interest": values["interest"],
+                "balance": values["balance"],
+            })
+        anchor_line.write({"exception_schedule_updated": True})
+        anchor_line._sync_exception_balance()
+        for line in future_lines:
+            move = line._create_interest_recognition_move(
+                line.due_date + relativedelta(day=31),
+                self._get_loan_journal(),
+                self.reference or self.name,
+            )
+            if move and move.date <= fields.Date.context_today(self):
+                move.action_post()
+        self.message_post(body=_(
+            "Future repayment schedule updated from exception on %(date)s. Remaining loan principal %(amount)s redistributed across %(count)s installment(s).",
+            date=anchor_line.due_date,
+            amount=self.currency_id.format(principal_amount),
+            count=len(future_lines),
+        ))
+        self.invalidate_recordset()
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Staff Loan"),
+            "res_model": "staff.loan",
+            "res_id": self.id,
+            "view_mode": "form",
+            "views": [(False, "form")],
+            "target": "current",
+        }
 
     def action_register_collection(self):
         self.ensure_one()
@@ -748,6 +904,10 @@ class StaffLoanLine(models.Model):
     exception_reference = fields.Char(copy=False)
     exception_reason = fields.Text(copy=False)
     exception_date = fields.Date(copy=False)
+    exception_interest_paid = fields.Monetary(copy=False)
+    exception_principal_paid = fields.Monetary(copy=False)
+    exception_remaining_principal = fields.Monetary(copy=False)
+    exception_schedule_updated = fields.Boolean(copy=False, default=False)
     settlement_move_id = fields.Many2one("account.move", copy=False, readonly=True)
     is_overdue = fields.Boolean(compute="_compute_is_overdue")
     paid_principal = fields.Monetary(compute="_compute_paid_amounts", store=True)
@@ -815,9 +975,66 @@ class StaffLoanLine(models.Model):
             return self.settlement_move_id
         return self.env["account.move"]
 
+    def _get_exception_interest_paid_value(self):
+        self.ensure_one()
+        if self.exception_interest_paid:
+            return self.exception_interest_paid
+        return min(self.interest, self.exception_amount)
+
+    def _get_exception_principal_paid_value(self):
+        self.ensure_one()
+        if self.exception_principal_paid:
+            return self.exception_principal_paid
+        interest_paid = self._get_exception_interest_paid_value()
+        return min(max(self.exception_amount - interest_paid, 0.0), self.principal)
+
+    def _get_exception_remaining_principal_value(self):
+        self.ensure_one()
+        if self.exception_remaining_principal:
+            return self.exception_remaining_principal
+        return max(self.principal - self._get_exception_principal_paid_value(), 0.0)
+
+    def _get_exception_outstanding_balance_value(self):
+        self.ensure_one()
+        future_principal = sum(
+            self.loan_id.line_ids.filtered(lambda line: line.due_date > self.due_date and line.state == "unpaid").mapped("principal")
+        )
+        if self.exception_schedule_updated:
+            return self.currency_id.round(future_principal)
+        return self.currency_id.round(future_principal + self._get_exception_remaining_principal_value())
+
+    def _sync_exception_balance(self):
+        self.ensure_one()
+        if not self.is_exception:
+            return
+        self.write({"balance": self._get_exception_outstanding_balance_value()})
+
+    def _normalize_exception_values(self):
+        self.ensure_one()
+        if not self.is_exception:
+            return
+        vals = {}
+        if not self.exception_principal_paid or not self.exception_remaining_principal:
+            interest_paid = self.currency_id.round(self._get_exception_interest_paid_value())
+            principal_paid = self.currency_id.round(self._get_exception_principal_paid_value())
+            remaining_principal = self.currency_id.round(max(self.principal - principal_paid, 0.0))
+            vals.update({
+                "exception_interest_paid": interest_paid,
+                "exception_principal_paid": principal_paid,
+                "exception_remaining_principal": remaining_principal,
+                "principal": principal_paid,
+            })
+        if vals:
+            self.write(vals)
+        self._sync_exception_balance()
+
     @api.depends(
         "is_exception",
         "exception_amount",
+        "exception_interest_paid",
+        "exception_principal_paid",
+        "exception_remaining_principal",
+        "exception_schedule_updated",
         "collection_move_ids.state",
         "collection_move_ids.reversal_move_ids",
         "collection_move_ids.line_ids.debit",
@@ -828,19 +1045,23 @@ class StaffLoanLine(models.Model):
     def _compute_paid_amounts(self):
         for line in self:
             if line.is_exception:
-                paid_amount = min(line.exception_amount, line.payment)
-                open_amount = 0.0
+                paid_principal = line._get_exception_principal_paid_value()
+                paid_interest = line._get_exception_interest_paid_value()
+                paid_amount = paid_principal + paid_interest
+                open_amount = 0.0 if line.exception_schedule_updated else line._get_exception_remaining_principal_value()
             elif line._get_effective_settlement_move():
                 paid_amount = line.payment
                 open_amount = 0.0
+                paid_principal = min(paid_amount, line.principal)
+                paid_interest = min(max(paid_amount - paid_principal, 0.0), line.interest)
             else:
                 paid_amount = 0.0
                 for move in line._get_posted_payment_moves():
                     paid_amount += sum(move.line_ids.filtered(lambda item: item.account_id == line.loan_id.receivable_account_id).mapped("credit"))
                 paid_amount = min(paid_amount, line.payment)
                 open_amount = max(line.payment - paid_amount, 0.0)
-            paid_principal = min(paid_amount, line.principal)
-            paid_interest = min(max(paid_amount - paid_principal, 0.0), line.interest)
+                paid_principal = min(paid_amount, line.principal)
+                paid_interest = min(max(paid_amount - paid_principal, 0.0), line.interest)
             line.paid_principal = line.currency_id.round(paid_principal)
             line.paid_interest = line.currency_id.round(paid_interest)
             line.paid_amount = line.currency_id.round(paid_amount)
@@ -898,8 +1119,8 @@ class StaffLoanLine(models.Model):
         self.ensure_one()
         if self.loan_id.state not in ("running", "disbursed"):
             raise UserError(_("Manual exceptions are allowed only after disbursement."))
-        if self.state == "paid":
-            raise UserError(_("This installment is already paid."))
+        if self.state != "unpaid":
+            raise UserError(_("Only unpaid installments can be marked as exception."))
         return {
             "type": "ir.actions.act_window",
             "name": _("Manual Exception"),
@@ -944,22 +1165,58 @@ class StaffLoanLine(models.Model):
         loan._refresh_state_after_collection()
         return move
 
-    def _mark_manual_exception(self, amount, reference, reason, date=False):
+    def _apply_exception(self, date, journal, amount, reference, reason):
         self.ensure_one()
+        loan = self.loan_id
+        loan._require_accounting_settings()
+        if self.state != "unpaid":
+            raise UserError(_("Only unpaid installments can be marked as exception."))
+        if amount <= 0:
+            raise UserError(_("Exception amount must be positive."))
+        if float_compare(amount, self.open_amount, precision_rounding=self.currency_id.rounding) >= 0:
+            raise UserError(_("Use Collect for the full scheduled amount. Exception is only for partial payment."))
+        if float_compare(amount, self.interest, precision_rounding=self.currency_id.rounding) < 0:
+            raise UserError(_("Exception amount must cover the full scheduled interest for the installment."))
+        partner = loan.employee_id.work_contact_id or loan.employee_id.user_id.partner_id
+        exception_principal_paid = self.currency_id.round(min(max(amount - self.interest, 0.0), self.principal))
+        remaining_principal = self.currency_id.round(max(self.principal - exception_principal_paid, 0.0))
+        future_principal = sum(
+            loan.line_ids.filtered(lambda line: line.due_date > self.due_date and line.state == "unpaid").mapped("principal")
+        )
+        move = self._create_collection_move(
+            date,
+            journal,
+            amount,
+            reference or loan.name,
+            partner=partner,
+        )
+        move.action_post()
+        self._post_interest_recognition_on_collection(date, journal, reference or loan.name, partner=partner)
         self.write({
             "is_exception": True,
             "exception_amount": amount,
             "exception_reference": reference,
             "exception_reason": reason,
             "exception_date": date or fields.Date.context_today(self),
+            "exception_interest_paid": self.interest,
+            "exception_principal_paid": exception_principal_paid,
+            "exception_remaining_principal": remaining_principal,
+            "exception_schedule_updated": False,
+            "principal": exception_principal_paid,
+            "balance": self.currency_id.round(future_principal + remaining_principal),
         })
-        self.loan_id.message_post(body=_(
-            "Installment due on %(date)s marked as manual exception. Amount %(amount)s. Ref %(reference)s. %(reason)s",
+        loan.message_post(body=_(
+            "Installment due on %(date)s posted as exception. Paid %(amount)s, principal paid %(principal)s, remaining principal %(remaining)s. Ref %(reference)s. %(reason)s",
             date=self.due_date,
-            amount=self.loan_id.currency_id.format(amount),
+            amount=loan.currency_id.format(amount),
+            principal=loan.currency_id.format(exception_principal_paid),
+            remaining=loan.currency_id.format(remaining_principal),
             reference=reference or "-",
             reason=reason or "",
         ))
+        self.invalidate_recordset()
+        loan.invalidate_recordset()
+        return move
 
     def _post_interest_recognition_on_collection(self, date, journal, reference, partner=False):
         self.ensure_one()

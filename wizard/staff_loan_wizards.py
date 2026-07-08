@@ -330,14 +330,18 @@ class StaffLoanFullSettlementWizard(models.TransientModel):
 
 class StaffLoanExceptionWizard(models.TransientModel):
     _name = "staff.loan.exception.wizard"
-    _description = "Staff Loan Manual Exception Wizard"
+    _description = "Staff Loan Exception Wizard"
 
     loan_id = fields.Many2one("staff.loan", required=True)
     line_id = fields.Many2one("staff.loan.line", required=True)
     currency_id = fields.Many2one(related="loan_id.currency_id")
     exception_date = fields.Date(default=fields.Date.context_today, required=True)
+    journal_id = fields.Many2one("account.journal", required=True)
     exception_amount = fields.Monetary(required=True)
-    manual_entry_ref = fields.Char(required=True)
+    scheduled_interest = fields.Monetary(related="line_id.interest", currency_field="currency_id")
+    principal_paid = fields.Monetary(compute="_compute_exception_split", currency_field="currency_id")
+    remaining_principal = fields.Monetary(compute="_compute_exception_split", currency_field="currency_id")
+    reference = fields.Char()
     reason = fields.Text(required=True)
 
     @api.model
@@ -346,7 +350,11 @@ class StaffLoanExceptionWizard(models.TransientModel):
         loan = self.env["staff.loan"].browse(self.env.context.get("default_loan_id"))
         line = self.env["staff.loan.line"].browse(self.env.context.get("default_line_id"))
         if loan:
-            res["loan_id"] = loan.id
+            res.update({
+                "loan_id": loan.id,
+                "journal_id": loan._get_loan_journal().id,
+                "reference": loan.reference or loan.name,
+            })
         if line:
             res.update({
                 "line_id": line.id,
@@ -354,11 +362,24 @@ class StaffLoanExceptionWizard(models.TransientModel):
             })
         return res
 
+    @api.depends("line_id", "exception_amount")
+    def _compute_exception_split(self):
+        for wizard in self:
+            principal_paid = max(wizard.exception_amount - wizard.line_id.interest, 0.0)
+            wizard.principal_paid = wizard.currency_id.round(min(principal_paid, wizard.line_id.principal))
+            wizard.remaining_principal = wizard.currency_id.round(max(wizard.line_id.principal - wizard.principal_paid, 0.0))
+
     def action_apply_exception(self):
         self.ensure_one()
         if self.line_id.loan_id != self.loan_id:
             raise UserError(_("The selected installment does not belong to this loan."))
-        self.line_id._mark_manual_exception(self.exception_amount, self.manual_entry_ref, self.reason, self.exception_date)
+        self.line_id._apply_exception(
+            self.exception_date,
+            self.journal_id,
+            self.exception_amount,
+            self.reference,
+            self.reason,
+        )
         return {"type": "ir.actions.act_window_close"}
 
 
@@ -408,8 +429,14 @@ class StaffLoanCancelWizard(models.TransientModel):
     def action_cancel(self):
         self.ensure_one()
         loan = self.loan_id
-        if loan.state not in ("draft", "approved"):
-            raise UserError(_("Only Draft or Approved loans can be cancelled directly."))
+        if loan.state not in ("draft", "approved", "running"):
+            raise UserError(_("Only Draft, Approved, or Running loans can be cancelled."))
+        if loan.state == "running":
+            (
+                loan.disbursement_move_id
+                | loan.line_ids.generated_move_ids
+                | loan.line_ids.collection_move_ids
+            ).filtered(lambda move: move.state != "cancel")._unlink_or_reverse()
         loan.write({
             "state": "cancelled",
             "cancel_date": self.cancel_date,

@@ -97,7 +97,7 @@
                         <field name="remaining_deferred_interest" readonly="1"/>
                         <field name="affected_line_count" readonly="1"/>
                     </group>
-                    <group>
+                    <group string="">
                         <field name="settlement_date"/>
                         <field name="journal_id"/>
                         <field name="reference"/>
@@ -116,18 +116,26 @@
         <field name="name">staff.loan.exception.wizard.form</field>
         <field name="model">staff.loan.exception.wizard</field>
         <field name="arch" type="xml">
-            <form string="Manual Exception">
+            <form string="Exception">
                 <group>
-                    <field name="loan_id" invisible="1"/>
-                    <field name="line_id" readonly="1" options="{'no_open': True}"/>
-                    <field name="currency_id" invisible="1"/>
-                    <field name="exception_date"/>
-                    <field name="exception_amount"/>
-                    <field name="manual_entry_ref"/>
-                    <field name="reason"/>
+                    <group string="Payment Split">
+                        <field name="scheduled_interest" readonly="1"/>
+                        <field name="principal_paid" readonly="1"/>
+                        <field name="remaining_principal" readonly="1"/>
+                    </group>
+                    <group string="">
+                        <field name="loan_id" invisible="1"/>
+                        <field name="line_id" readonly="1" options="{'no_open': True}"/>
+                        <field name="currency_id" invisible="1"/>
+                        <field name="exception_date"/>
+                        <field name="journal_id"/>
+                        <field name="exception_amount"/>
+                        <field name="reference"/>
+                        <field name="reason"/>
+                    </group>
                 </group>
                 <footer>
-                    <button name="action_apply_exception" string="Mark Exception" type="object" class="btn-primary"/>
+                    <button name="action_apply_exception" string="Post Exception" type="object" class="btn-primary"/>
                     <button string="Cancel" special="cancel" class="btn-secondary"/>
                 </footer>
             </form>
@@ -149,7 +157,7 @@
                         <field name="paid_amount" readonly="1"/>
                         <field name="outstanding_balance" readonly="1"/>
                     </group>
-                    <group>
+                    <group string="">
                         <field name="close_date"/>
                         <field name="remarks"/>
                     </group>

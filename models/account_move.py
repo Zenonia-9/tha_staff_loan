@@ -49,6 +49,8 @@ class AccountMove(models.Model):
         "staff_loan_id.line_ids.collection_move_ids",
         "staff_loan_id.line_ids.is_exception",
         "staff_loan_id.line_ids.exception_amount",
+        "staff_loan_id.line_ids.exception_remaining_principal",
+        "staff_loan_id.line_ids.exception_schedule_updated",
         "line_ids.debit",
         "line_ids.credit",
         "line_ids.account_id",
