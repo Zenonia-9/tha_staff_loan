@@ -118,6 +118,7 @@
         <field name="arch" type="xml">
             <form string="Exception">
                 <group>
+                    <field name="line_id" readonly="1" options="{'no_open': True}"/>
                     <group string="Payment Split">
                         <field name="scheduled_interest" readonly="1"/>
                         <field name="principal_paid" readonly="1"/>
@@ -125,7 +126,6 @@
                     </group>
                     <group string="">
                         <field name="loan_id" invisible="1"/>
-                        <field name="line_id" readonly="1" options="{'no_open': True}"/>
                         <field name="currency_id" invisible="1"/>
                         <field name="exception_date"/>
                         <field name="journal_id"/>
