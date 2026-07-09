@@ -10,7 +10,7 @@ class AccountMove(models.Model):
         readonly=True,
         copy=False,
         index=True,
-        ondelete="restrict",
+        ondelete="set null",
     )
     staff_loan_line_id = fields.Many2one(
         "staff.loan.line",
@@ -18,7 +18,7 @@ class AccountMove(models.Model):
         readonly=True,
         copy=False,
         index=True,
-        ondelete="restrict",
+        ondelete="set null",
     )
     staff_loan_due_date = fields.Date(
         related="staff_loan_line_id.due_date",
