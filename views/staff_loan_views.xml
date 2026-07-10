@@ -135,6 +135,8 @@
                             <field name="outstanding_balance"/>
                         </group>
                         <group>
+                            <field name="granter_id" readonly="state not in ('draft', 'approved')"/>
+                            <field name="granter_department_id"/>
                             <field name="loan_date" readonly="state != 'draft'"/>
                             <label for="duration" string="Duration"/>
                             <div>

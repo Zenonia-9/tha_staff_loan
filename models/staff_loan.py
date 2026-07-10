@@ -34,6 +34,19 @@ class StaffLoan(models.Model):
         store=True,
         readonly=True,
     )
+    granter_id = fields.Many2one(
+        "hr.employee",
+        string="Granter",
+        tracking=True,
+        domain="[('company_id', 'in', [False, company_id])]",
+    )
+    granter_department_id = fields.Many2one(
+        "hr.department",
+        string="Granter Department",
+        related="granter_id.department_id",
+        store=True,
+        readonly=True,
+    )
     branch_id = fields.Many2one(
         "hr.work.location",
         string="Branch",
@@ -134,7 +147,7 @@ class StaffLoan(models.Model):
         "account.account",
         string="Deferred Account",
         tracking=True,
-        domain="[('account_type', 'in', ('liability_current', 'liability_non_current')), ('company_ids', 'in', company_id)]",
+        domain="[('account_type', 'in', ('income', 'income_other')), ('company_ids', 'in', company_id)]",
     )
 
     line_ids = fields.One2many("staff.loan.line", "loan_id", string="Repayment Schedule", copy=True)
@@ -375,12 +388,15 @@ class StaffLoan(models.Model):
         if moves.filtered(lambda move: move.state == "posted"):
             raise UserError(_("You cannot set this loan to draft while posted entries are linked. Reverse or cancel the entries first."))
         moves.filtered(lambda move: move.state == "draft").unlink()
+        self.line_ids.unlink()
         self.write({
             "state": "draft",
             "cancel_date": False,
             "cancel_reason": False,
+            "disbursement_date": False,
+            "disbursement_move_id": False,
         })
-        self.message_post(body=_("Loan set back to draft."))
+        self.message_post(body=_("Loan set back to draft and the repayment schedule was reset."))
 
     def action_approve_wizard(self):
         self.ensure_one()
@@ -741,7 +757,15 @@ class StaffLoan(models.Model):
         anchor_line._normalize_exception_values()
         posted_future_moves = future_lines.generated_move_ids.filtered(lambda move: move.state == "posted" and not move.reversal_move_ids)
         if posted_future_moves:
-            raise UserError(_("Future posted interest recognition entries must be adjusted manually before updating the schedule."))
+            entry_lines = []
+            for move in posted_future_moves.sorted(lambda item: (item.date, item.id)):
+                label = move.display_name or move.name or move.ref or str(move.id)
+                entry_lines.append(_("%(entry)s on %(date)s", entry=label, date=format_date(self.env, move.date)))
+            raise UserError(_(
+                "Update Schedule is blocked because these future interest recognition entries are already posted.\n"
+                "Reset them to draft first, then run Update Schedule again:\n%(entries)s",
+                entries="\n".join(entry_lines),
+            ))
         principal_amount = anchor_line.exception_remaining_principal + sum(future_lines.mapped("principal"))
         schedule_values = self._get_schedule_values_for_amount(principal_amount, future_lines.mapped("due_date"))
         future_lines.generated_move_ids.filtered(lambda move: move.state != "posted").unlink()
