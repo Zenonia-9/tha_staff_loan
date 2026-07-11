@@ -36,13 +36,13 @@ class StaffLoan(models.Model):
     )
     granter_id = fields.Many2one(
         "hr.employee",
-        string="Granter",
+        string="Grantor",
         tracking=True,
         domain="[('company_id', 'in', [False, company_id])]",
     )
     granter_department_id = fields.Many2one(
         "hr.department",
-        string="Granter Department",
+        string="Grantor Department",
         related="granter_id.department_id",
         store=True,
         readonly=True,
@@ -79,6 +79,11 @@ class StaffLoan(models.Model):
 
     loan_amount = fields.Monetary(required=True, tracking=True)
     loan_date = fields.Date(required=True, default=fields.Date.context_today, tracking=True)
+    skip_until = fields.Date(
+        string="Skip Until",
+        tracking=True,
+        help="Optional date used to postpone the first repayment month. If set, the first payment date will use this date's month together with the selected payment anchor.",
+    )
     duration = fields.Integer(string="Duration", required=True, default=12, tracking=True)
     payment_frequency = fields.Selection(
         [("monthly", "Monthly")],
@@ -682,6 +687,12 @@ class StaffLoan(models.Model):
         values[-1]["balance"] = 0.0
         return values
 
+    @api.constrains("loan_date", "skip_until")
+    def _check_skip_until(self):
+        for loan in self:
+            if loan.skip_until and loan.skip_until < loan.loan_date:
+                raise ValidationError(_("Skip Until must be on or after the Loan Date."))
+
     def _get_schedule_values_for_amount(self, principal_amount, due_dates):
         self.ensure_one()
         duration = len(due_dates)
@@ -786,7 +797,7 @@ class StaffLoan(models.Model):
             if move and move.date <= fields.Date.context_today(self):
                 move.action_post()
         self.message_post(body=_(
-            "Future repayment schedule updated from exception on %(date)s. Remaining loan principal %(amount)s redistributed across %(count)s installment(s).",
+            "Future repayment schedule updated from exception on %(date)s. Remaining loan principal %(amount)s redistributed across %(count)s installment(s). Update the disbursement entry to match the revised total loan interest.",
             date=anchor_line.due_date,
             amount=self.currency_id.format(principal_amount),
             count=len(future_lines),

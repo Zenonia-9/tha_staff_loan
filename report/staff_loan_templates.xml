@@ -8,7 +8,7 @@
                         <table class="table table-sm">
                             <tr><td><strong>Loan No.</strong></td><td><span t-field="o.name"/></td><td><strong>Staff</strong></td><td><span t-field="o.employee_id"/></td></tr>
                             <tr><td><strong>Department</strong></td><td><span t-field="o.department_id"/></td><td><strong>Company</strong></td><td><span t-field="o.company_id"/></td></tr>
-                            <tr><td><strong>Granter</strong></td><td><span t-field="o.granter_id"/></td><td><strong>Granter Department</strong></td><td><span t-field="o.granter_department_id"/></td></tr>
+                            <tr><td><strong>Grantor</strong></td><td><span t-field="o.granter_id"/></td><td><strong>Grantor Department</strong></td><td><span t-field="o.granter_department_id"/></td></tr>
                             <tr><td><strong>Loan Date</strong></td><td><span t-field="o.loan_date"/></td><td><strong>Schedule Method</strong></td><td><span t-field="o.interest_type"/></td></tr>
                             <tr><td><strong>Payment Anchor</strong></td><td><span t-field="o.payment_anchor"/></td><td><strong>Interest Rate</strong></td><td><span t-out="('%s%%' % o.interest_rate)"/></td></tr>
                             <tr><td><strong>Loan Amount</strong></td><td><span t-field="o.loan_amount"/></td><td><strong>Total Interest</strong></td><td><span t-field="o.total_interest"/></td></tr>

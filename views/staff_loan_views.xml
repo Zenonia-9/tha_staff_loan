@@ -93,16 +93,16 @@
         <field name="arch" type="xml">
             <form string="Staff Loan">
                 <header>
-                    <button name="action_reset" string="Reset" type="object" class="btn-secondary" invisible="state != 'draft' or not line_ids"/>
+                    <button name="action_reset" string="Reset" type="object" class="btn-secondary" invisible="state != 'draft' or not line_ids" groups="base.group_system"/>
                     <button name="action_approve_wizard" string="Approve" type="object" class="btn-primary" invisible="state != 'draft'"/>
                     <button name="action_disburse_wizard" string="Disburse" type="object" class="btn-primary" invisible="state != 'approved'"/>
                     <button name="action_update_exception_schedule" string="Update Schedule" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed') or not exception_update_pending"/>
                     <button name="action_full_settlement_wizard" string="Full Settlement" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed') or outstanding_balance == 0"/>
                     <button name="action_compute_schedule" string="Compute" type="object" class="btn-secondary" invisible="state != 'draft' or line_ids"/>
                     <button name="action_close_wizard" string="Close" type="object" class="btn-secondary" invisible="state != 'running'"/>
-                    <button name="action_cancel" string="Cancel" type="object" class="btn-secondary" invisible="state != 'running'"/>
-                    <button name="action_cancel_wizard" string="Cancel" type="object" class="btn-secondary" invisible="state not in ('draft', 'approved')"/>
-                    <button name="action_set_to_draft" string="Set to Draft" type="object" class="btn-secondary" invisible="state != 'cancelled'"/>
+                    <button name="action_cancel" string="Cancel" type="object" class="btn-secondary" invisible="state != 'running'" groups="base.group_system"/>
+                    <button name="action_cancel_wizard" string="Cancel" type="object" class="btn-secondary" invisible="state not in ('draft', 'approved')" groups="base.group_system"/>
+                    <button name="action_set_to_draft" string="Set to Draft" type="object" class="btn-secondary" invisible="state != 'cancelled'" groups="base.group_system"/>
                     <field name="state" widget="statusbar" statusbar_visible="draft,approved,disbursed,running,closed,cancelled"/>
                 </header>
                 <sheet>
@@ -130,6 +130,7 @@
                             <field name="loan_amount" readonly="state != 'draft'"/>
                             <field name="interest_type" readonly="state != 'draft'"/>
                             <field name="payment_anchor" readonly="state != 'draft'"/>
+                            <field name="skip_until" readonly="state != 'draft'" help="Leave empty to use the loan date month for the first payment date. Set a later date to postpone the first payment month."/>
                             <field name="interest_rate" readonly="state != 'draft'"/>
                             <field name="total_interest"/>
                             <field name="outstanding_balance"/>
@@ -154,7 +155,7 @@
                         <page string="Repayment Schedule">
                             <field name="line_ids" readonly="state != 'draft'"/>
                         </page>
-                        <page string="Accounting Settings">
+                        <page string="Loan Settings">
                             <group>
                                 <group>
                                     <field name="receivable_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>

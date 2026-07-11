@@ -9,6 +9,7 @@
                     <field name="currency_id" invisible="1"/>
                     <field name="loan_amount"/>
                     <field name="loan_date"/>
+                    <field name="skip_until"/>
                     <field name="duration"/>
                     <field name="interest_type"/>
                     <field name="payment_anchor"/>

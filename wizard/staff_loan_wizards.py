@@ -13,6 +13,7 @@ class StaffLoanComputeWizard(models.TransientModel):
     currency_id = fields.Many2one(related="loan_id.currency_id")
     loan_amount = fields.Monetary(required=True)
     loan_date = fields.Date(required=True)
+    skip_until = fields.Date()
     duration = fields.Integer(required=True)
     interest_type = fields.Selection(related="loan_id.interest_type", readonly=False)
     payment_anchor = fields.Selection(related="loan_id.payment_anchor", readonly=False)
@@ -28,6 +29,7 @@ class StaffLoanComputeWizard(models.TransientModel):
                 "loan_id": loan.id,
                 "loan_amount": loan.loan_amount,
                 "loan_date": loan.loan_date,
+                "skip_until": loan.skip_until,
                 "duration": loan.duration,
                 "interest_type": loan.interest_type,
                 "payment_anchor": loan.payment_anchor,
@@ -37,7 +39,7 @@ class StaffLoanComputeWizard(models.TransientModel):
 
     def _get_first_due_date(self):
         self.ensure_one()
-        base_date = self.loan_date + relativedelta(months=1)
+        base_date = self.skip_until or self.loan_date
         if self.payment_anchor == "start_of_month":
             return base_date.replace(day=1)
         return base_date + relativedelta(day=31)
@@ -123,7 +125,7 @@ class StaffLoanComputeWizard(models.TransientModel):
             return self._get_emi_schedule_values()
         return self._get_flat_schedule_values()
 
-    @api.depends("loan_amount", "loan_date", "duration", "interest_rate", "interest_type", "payment_anchor")
+    @api.depends("loan_amount", "loan_date", "skip_until", "duration", "interest_rate", "interest_type", "payment_anchor")
     def _compute_preview(self):
         for wizard in self:
             if not wizard.loan_amount or not wizard.duration or not wizard.loan_date:
@@ -161,6 +163,7 @@ class StaffLoanComputeWizard(models.TransientModel):
         loan.write({
             "loan_amount": self.loan_amount,
             "loan_date": self.loan_date,
+            "skip_until": self.skip_until,
             "duration": self.duration,
             "interest_type": self.interest_type,
             "payment_anchor": self.payment_anchor,
