@@ -9,8 +9,10 @@
                     <field name="currency_id" invisible="1"/>
                     <field name="loan_amount"/>
                     <field name="loan_date"/>
-                    <field name="first_payment_date"/>
+                    <field name="skip_until"/>
                     <field name="duration"/>
+                    <field name="interest_type"/>
+                    <field name="payment_anchor"/>
                     <field name="interest_rate"/>
                 </group>
                 <field name="preview" nolabel="1" readonly="1"/>
@@ -71,12 +73,70 @@
                     <field name="currency_id" invisible="1"/>
                     <field name="collection_date"/>
                     <field name="journal_id"/>
-                    <field name="amount"/>
+                    <field name="amount" readonly="1"/>
                     <field name="reference"/>
                     <field name="remarks"/>
                 </group>
                 <footer>
                     <button name="action_collect" string="Post Collection" type="object" class="btn-primary"/>
+                    <button string="Cancel" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_full_settlement_wizard" model="ir.ui.view">
+        <field name="name">staff.loan.full.settlement.wizard.form</field>
+        <field name="model">staff.loan.full.settlement.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Full Settlement">
+                <group>
+                    <group string="Settlement Summary">
+                        <field name="loan_id" readonly="1"/>
+                        <field name="currency_id" invisible="1"/>
+                        <field name="outstanding_balance" readonly="1"/>
+                        <field name="remaining_deferred_interest" readonly="1"/>
+                        <field name="affected_line_count" readonly="1"/>
+                    </group>
+                    <group string="">
+                        <field name="settlement_date"/>
+                        <field name="journal_id"/>
+                        <field name="reference"/>
+                        <field name="remarks"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_settle" string="Post Full Settlement" type="object" class="btn-primary"/>
+                    <button string="Cancel" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_staff_loan_exception_wizard" model="ir.ui.view">
+        <field name="name">staff.loan.exception.wizard.form</field>
+        <field name="model">staff.loan.exception.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Exception">
+                <group>
+                    <field name="line_id" readonly="1" options="{'no_open': True}"/>
+                    <group string="Payment Split">
+                        <field name="scheduled_interest" readonly="1"/>
+                        <field name="principal_paid" readonly="1"/>
+                        <field name="remaining_principal" readonly="1"/>
+                    </group>
+                    <group string="">
+                        <field name="loan_id" invisible="1"/>
+                        <field name="currency_id" invisible="1"/>
+                        <field name="exception_date"/>
+                        <field name="journal_id"/>
+                        <field name="exception_amount"/>
+                        <field name="reference"/>
+                        <field name="reason"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_apply_exception" string="Post Exception" type="object" class="btn-primary"/>
                     <button string="Cancel" special="cancel" class="btn-secondary"/>
                 </footer>
             </form>
@@ -98,7 +158,7 @@
                         <field name="paid_amount" readonly="1"/>
                         <field name="outstanding_balance" readonly="1"/>
                     </group>
-                    <group>
+                    <group string="">
                         <field name="close_date"/>
                         <field name="remarks"/>
                     </group>

@@ -21,7 +21,7 @@
         <field name="name">staff.loan.line.list</field>
         <field name="model">staff.loan.line</field>
         <field name="arch" type="xml">
-            <list string="Staff Loan lines" editable="bottom" create="0" delete="0" limit="80" decoration-info="not is_repayment_move_posted">
+            <list string="Staff Loan lines" editable="bottom" create="0" delete="0" limit="80" decoration-danger="is_overdue" decoration-info="not is_repayment_move_posted">
                 <field name="sequence" string="#" width="30px" optional="hide"/>
                 <field name="loan_id" optional="hide"/>
                 <field name="employee_id" optional="hide"/>
@@ -30,7 +30,9 @@
                 <field name="interest" string="Interests" sum="Total interests"/>
                 <field name="payment" string="Payments" sum="Total payments"/>
                 <field name="balance" string="Outstanding Balance"/>
-                <field name="state" string="Status" widget="badge" decoration-info="state == 'open'" decoration-warning="state == 'partial'" decoration-success="state == 'paid'" decoration-danger="state == 'overdue'"/>
+                <field name="state" string="Status" widget="badge" decoration-info="state == 'unpaid'" decoration-success="state == 'paid'" decoration-warning="state == 'exception'"/>
+                <button name="action_collect_wizard" string="Collect" type="object" class="btn-link" invisible="state != 'unpaid'"/>
+                <button name="action_manual_exception_wizard" string="Exception" type="object" class="btn-link" invisible="state == 'paid' or state == 'exception'"/>
             </list>
         </field>
     </record>
@@ -91,18 +93,20 @@
         <field name="arch" type="xml">
             <form string="Staff Loan">
                 <header>
-                    <button name="action_reset" string="Reset" type="object" class="btn-secondary" invisible="state != 'draft' or not line_ids"/>
+                    <button name="action_reset" string="Reset" type="object" class="btn-secondary" invisible="state != 'draft' or not line_ids" groups="base.group_system"/>
                     <button name="action_approve_wizard" string="Approve" type="object" class="btn-primary" invisible="state != 'draft'"/>
                     <button name="action_disburse_wizard" string="Disburse" type="object" class="btn-primary" invisible="state != 'approved'"/>
-                    <button name="action_register_collection" string="Register Collection" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed')"/>
+                    <button name="action_update_exception_schedule" string="Update Schedule" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed') or not exception_update_pending"/>
+                    <button name="action_full_settlement_wizard" string="Full Settlement" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed') or outstanding_balance == 0"/>
                     <button name="action_compute_schedule" string="Compute" type="object" class="btn-secondary" invisible="state != 'draft' or line_ids"/>
                     <button name="action_close_wizard" string="Close" type="object" class="btn-secondary" invisible="state != 'running'"/>
-                    <button name="action_cancel" string="Cancel" type="object" class="btn-secondary" invisible="state != 'running'"/>
-                    <button name="action_cancel_wizard" string="Cancel" type="object" class="btn-secondary" invisible="state not in ('draft', 'approved')"/>
-                    <button name="action_set_to_draft" string="Set to Draft" type="object" class="btn-secondary" invisible="state != 'cancelled'"/>
+                    <button name="action_cancel" string="Cancel" type="object" class="btn-secondary" invisible="state != 'running'" groups="base.group_system"/>
+                    <button name="action_cancel_wizard" string="Cancel" type="object" class="btn-secondary" invisible="state not in ('draft', 'approved')" groups="base.group_system"/>
+                    <button name="action_set_to_draft" string="Set to Draft" type="object" class="btn-secondary" invisible="state != 'cancelled'" groups="base.group_system"/>
                     <field name="state" widget="statusbar" statusbar_visible="draft,approved,disbursed,running,closed,cancelled"/>
                 </header>
                 <sheet>
+                    <field name="exception_update_pending" invisible="1"/>
                     <div class="oe_button_box" name="button_box">
                         <button class="oe_stat_button" type="object" name="action_open_entries" icon="fa-bars">
                             <field name="posted_entry_count" string="Posted Entries" widget="statinfo"/>
@@ -123,16 +127,17 @@
                         <group>
                             <field name="employee_id" readonly="state != 'draft'"/>
                             <field name="department_id"/>
-                            <field name="branch_id"/>
                             <field name="loan_amount" readonly="state != 'draft'"/>
                             <field name="interest_type" readonly="state != 'draft'"/>
+                            <field name="payment_anchor" readonly="state != 'draft'"/>
                             <field name="interest_rate" readonly="state != 'draft'"/>
                             <field name="total_interest"/>
                             <field name="outstanding_balance"/>
                         </group>
                         <group>
+                            <field name="granter_id" readonly="state not in ('draft', 'approved')"/>
+                            <field name="granter_department_id"/>
                             <field name="loan_date" readonly="state != 'draft'"/>
-                            <field name="first_payment_date" readonly="state != 'draft'"/>
                             <label for="duration" string="Duration"/>
                             <div>
                                 <field name="duration" class="oe_inline" readonly="state != 'draft'"/>
@@ -140,7 +145,6 @@
                                 <span class="oe_inline" invisible="duration != 1"> month</span>
                             </div>
                             <field name="payment_frequency" readonly="state != 'draft'"/>
-                            <field name="payment_method" readonly="state != 'draft'"/>
                             <field name="disbursement_date" readonly="1"/>
                             <field name="reference"/>
                             <field name="company_id" readonly="state != 'draft'" groups="base.group_multi_company"/>
@@ -150,18 +154,19 @@
                         <page string="Repayment Schedule">
                             <field name="line_ids" readonly="state != 'draft'"/>
                         </page>
-                        <page string="Accounting Settings">
+                        <page string="Loan Settings">
                             <group>
                                 <group>
                                     <field name="receivable_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
                                     <field name="interest_income_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
                                     <field name="disbursement_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
                                     <field name="collection_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
-                                    <field name="writeoff_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
+                                    <field name="deferred_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
                                 </group>
                                 <group>
                                     <field name="disbursement_journal_id" readonly="state not in ('draft', 'approved')"/>
                                     <field name="disbursement_move_id"/>
+                                    <field name="skip_until" readonly="state != 'draft'" help="Leave empty to use the loan date month for the first payment date. Set a later date to postpone the first payment month."/>
                                 </group>
                             </group>
                         </page>
