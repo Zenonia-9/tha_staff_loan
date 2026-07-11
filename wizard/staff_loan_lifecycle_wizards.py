@@ -1,7 +1,6 @@
-from odoo import _, fields, models
+from odoo import _, api, fields, models
 from odoo.exceptions import UserError
-from odoo.tools import float_is_zero
-from odoo.tools.misc import format_date
+from odoo.tools import float_is_zero, format_date
 
 
 class StaffLoanApproveWizard(models.TransientModel):
@@ -47,19 +46,19 @@ class StaffLoanCloseWizard(models.TransientModel):
         loan = self.loan_id
         if not float_is_zero(loan.outstanding_balance, precision_rounding=loan.currency_id.rounding):
             raise UserError(_("You can close the staff loan only when the outstanding balance is zero."))
-        loan.line_ids.generated_move_ids.filtered(lambda move: move.staff_loan_line_id.due_date > self.close_date and move.state == "draft").unlink()
+        loan.line_ids.generated_move_ids.filtered(
+            lambda move: move.staff_loan_line_id.due_date > self.close_date and move.state == "draft"
+        ).unlink()
         loan.write({
             "state": "closed",
             "close_date": self.close_date,
             "close_remarks": self.remarks,
         })
-        loan.message_post(
-            body=_(
-                "Closed on the %(date)s. %(remarks)s",
-                date=format_date(self.env, self.close_date),
-                remarks=self.remarks or "",
-            )
-        )
+        loan.message_post(body=_(
+            "Closed on the %(date)s. %(remarks)s",
+            date=format_date(self.env, self.close_date),
+            remarks=self.remarks or "",
+        ))
         return {"type": "ir.actions.act_window_close"}
 
 
@@ -74,12 +73,56 @@ class StaffLoanCancelWizard(models.TransientModel):
     def action_cancel(self):
         self.ensure_one()
         loan = self.loan_id
-        if loan.state not in ("draft", "approved"):
-            raise UserError(_("Only Draft or Approved loans can be cancelled directly."))
+        if loan.state not in ("draft", "approved", "running"):
+            raise UserError(_("Only Draft, Approved, or Running loans can be cancelled."))
+        if loan.state == "running":
+            (
+                loan.disbursement_move_id
+                | loan.line_ids.generated_move_ids
+                | loan.line_ids.collection_move_ids
+            ).filtered(lambda move: move.state != "cancel")._unlink_or_reverse()
         loan.write({
             "state": "cancelled",
             "cancel_date": self.cancel_date,
             "cancel_reason": self.reason,
         })
         loan.message_post(body=_("Loan cancelled on %(date)s. %(reason)s", date=self.cancel_date, reason=self.reason))
+        return {"type": "ir.actions.act_window_close"}
+
+
+class StaffLoanDocumentWizard(models.TransientModel):
+    _name = "staff.loan.document.wizard"
+    _description = "Staff Loan Document Upload Wizard"
+
+    loan_id = fields.Many2one("staff.loan", required=True)
+    file = fields.Binary(required=True, attachment=False)
+    file_name = fields.Char(required=True)
+
+    @api.model
+    def default_get(self, fields_list):
+        res = super().default_get(fields_list)
+        loan_id = self.env.context.get("default_loan_id")
+        if not loan_id and self.env.context.get("active_model") == "staff.loan":
+            loan_id = self.env.context.get("active_id")
+        loan = self.env["staff.loan"].browse(loan_id)
+        if loan:
+            res["loan_id"] = loan.id
+        return res
+
+    def action_upload(self):
+        self.ensure_one()
+        loan = self.loan_id
+        if not loan and self.env.context.get("active_model") == "staff.loan":
+            loan = self.env["staff.loan"].browse(self.env.context.get("active_id"))
+        if not loan:
+            raise UserError(_("The upload must be opened from a staff loan."))
+        name = self.file_name
+        self.env["ir.attachment"].create({
+            "name": name,
+            "datas": self.file,
+            "res_model": "staff.loan",
+            "res_id": loan.id,
+            "company_id": loan.company_id.id,
+        })
+        loan.message_post(body=_("Document uploaded: %s", name))
         return {"type": "ir.actions.act_window_close"}

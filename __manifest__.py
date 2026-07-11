@@ -1,6 +1,6 @@
 {
     "name": "Staff Loan Management",
-    "version": "19.0.1.0.0",
+    "version": "19.0.1.0.2",
     "summary": "Manage staff loans, schedules, disbursements, and collections",
     "description": """
 Staff Loan Management
