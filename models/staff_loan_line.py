@@ -35,8 +35,8 @@ class StaffLoanLine(models.Model):
     open_amount = fields.Monetary(compute="_compute_paid_amounts", store=True)
     state = fields.Selection(
         [
-            ("unpaid", "Unpaid"),
-            ("paid", "Paid"),
+            ("unpaid", "Receivable"),
+            ("paid", "Received"),
             ("exception", "Exception"),
         ],
         string="Status",
