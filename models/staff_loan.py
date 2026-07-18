@@ -162,7 +162,13 @@ class StaffLoan(models.Model):
         readonly=True,
         copy=False,
     )
-    collection_move_ids = fields.Many2many("account.move", string="Collection Entries", compute="_compute_collection_move_ids")
+    collection_move_ids = fields.One2many(
+        "account.move",
+        "staff_loan_id",
+        string="Collection Entries",
+        domain=[("is_staff_loan_collection", "=", True)],
+        readonly=True,
+    )
     approved_by_id = fields.Many2one("res.users", string="Approved By", readonly=True, copy=False)
     approval_date = fields.Date(readonly=True, copy=False)
     approval_remarks = fields.Text(readonly=True, copy=False)
@@ -288,14 +294,6 @@ class StaffLoan(models.Model):
             )
             loan.outstanding_balance = sum(open_lines.mapped("open_amount"))
 
-    @api.depends("line_ids.collection_move_ids", "line_ids.collection_move_ids.state", "line_ids.collection_move_ids.reversal_move_ids")
-    def _compute_collection_move_ids(self):
-        for loan in self:
-            loan.collection_move_ids = self.env["account.move"].search([
-                ("staff_loan_id", "=", loan.id),
-                ("is_staff_loan_collection", "=", True),
-            ])
-
     def _get_entry_moves(self):
         self.ensure_one()
         return self.env["account.move"].search([("staff_loan_id", "=", self.id)])
@@ -311,12 +309,19 @@ class StaffLoan(models.Model):
         "message_attachment_count",
     )
     def _compute_counts(self):
+        posted_entry_count_by_loan = {
+            loan.id: count
+            for loan, count in self.env["account.move"]._read_group(
+                [("staff_loan_id", "in", self.ids), ("state", "=", "posted")],
+                ["staff_loan_id"],
+                ["__count"],
+            )
+        }
         for loan in self:
             loan.installment_count = len(loan.line_ids)
             loan.paid_installment_count = len(loan.line_ids.filtered(lambda line: line.state == "paid"))
             loan.remaining_installment_count = len(loan.line_ids.filtered(lambda line: line.state == "unpaid"))
-            moves = loan._get_entry_moves()
-            loan.posted_entry_count = len(moves.filtered(lambda move: move.state == "posted"))
+            loan.posted_entry_count = posted_entry_count_by_loan.get(loan.id, 0)
             loan.document_count = loan.message_attachment_count
 
     @api.depends(
