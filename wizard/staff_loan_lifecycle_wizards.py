@@ -49,6 +49,7 @@ class StaffLoanCloseWizard(models.TransientModel):
         loan.line_ids.generated_move_ids.filtered(
             lambda move: move.staff_loan_line_id.due_date > self.close_date and move.state == "draft"
         ).unlink()
+        loan._ensure_exception_adjustment(self.close_date, loan._get_loan_journal())
         loan.write({
             "state": "closed",
             "close_date": self.close_date,

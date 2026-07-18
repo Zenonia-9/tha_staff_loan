@@ -31,6 +31,7 @@ class AccountMove(models.Model):
     is_staff_loan_collection = fields.Boolean(readonly=True, copy=False)
     is_staff_loan_full_settlement = fields.Boolean(readonly=True, copy=False)
     is_staff_loan_settlement_recognition = fields.Boolean(readonly=True, copy=False)
+    is_staff_loan_exception_adjustment = fields.Boolean(readonly=True, copy=False)
     staff_loan_settlement_amount = fields.Monetary(
         string="Settlement",
         currency_field="staff_loan_currency_id",

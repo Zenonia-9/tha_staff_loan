@@ -351,6 +351,13 @@ class StaffLoanLine(models.Model):
                 "date": date,
                 "auto_post": "no",
             })
+        self.invalidate_recordset(["open_amount", "state"])
+        loan.line_ids.invalidate_recordset(["open_amount", "state"])
+        if all(
+            float_is_zero(line.open_amount, precision_rounding=line.currency_id.rounding)
+            for line in loan.line_ids
+        ):
+            loan._add_exception_adjustment_to_move(recognition_move)
         recognition_move.action_post()
         return recognition_move
 

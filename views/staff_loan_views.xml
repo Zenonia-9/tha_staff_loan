@@ -132,6 +132,7 @@
                             <field name="payment_anchor" readonly="state != 'draft'"/>
                             <field name="interest_rate" readonly="state != 'draft'"/>
                             <field name="total_interest"/>
+                            <field name="original_interest"/>
                             <field name="outstanding_balance"/>
                         </group>
                         <group>

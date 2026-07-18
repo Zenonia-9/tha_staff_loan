@@ -172,6 +172,14 @@ class StaffLoan(models.Model):
     cancel_reason = fields.Text(readonly=True, copy=False)
 
     total_interest = fields.Monetary(compute="_compute_totals", store=True)
+    original_interest = fields.Monetary(
+        string="Original Interest",
+        compute="_compute_original_interest",
+        store=True,
+        readonly=True,
+        copy=False,
+        help="Interest credited to the deferred account in the disbursement entry.",
+    )
     total_payment = fields.Monetary(compute="_compute_totals", store=True)
     paid_principal = fields.Monetary(compute="_compute_totals", store=True)
     paid_interest = fields.Monetary(compute="_compute_totals", store=True)
@@ -192,6 +200,21 @@ class StaffLoan(models.Model):
             if vals.get("name", "/") == "/":
                 vals["name"] = self.env["ir.sequence"].next_by_code("staff.loan") or "/"
         return super().create(vals_list)
+
+    @api.depends(
+        "disbursement_move_id.line_ids.account_id",
+        "disbursement_move_id.line_ids.debit",
+        "disbursement_move_id.line_ids.credit",
+        "deferred_account_id",
+    )
+    def _compute_original_interest(self):
+        for loan in self:
+            deferred_lines = loan.disbursement_move_id.line_ids.filtered(
+                lambda line: line.account_id == loan.deferred_account_id
+            )
+            loan.original_interest = loan.currency_id.round(
+                sum(deferred_lines.mapped("credit")) - sum(deferred_lines.mapped("debit"))
+            )
 
     @api.model
     def default_get(self, fields_list):
@@ -660,6 +683,85 @@ class StaffLoan(models.Model):
                 remaining_interest += line.interest
         return self.currency_id.round(remaining_interest)
 
+    def _get_original_interest_amount(self):
+        """Return the deferred interest actually established at disbursement."""
+        self.ensure_one()
+        return self.currency_id.round(self.original_interest)
+
+    def _get_exception_adjustment_amount(self):
+        self.ensure_one()
+        has_recalculated_exception = any(
+            line.is_exception and line.exception_schedule_updated for line in self.line_ids
+        )
+        if not has_recalculated_exception:
+            return 0.0
+        return self.currency_id.round(self.total_interest - self._get_original_interest_amount())
+
+    def _get_exception_adjustment_line_vals(self):
+        self.ensure_one()
+        adjustment = self._get_exception_adjustment_amount()
+        if float_is_zero(adjustment, precision_rounding=self.currency_id.rounding):
+            return []
+        partner = self.employee_id.work_contact_id or self.employee_id.user_id.partner_id
+        label = _("%s - Exception Adjustment") % self.name
+        amount = abs(adjustment)
+        if adjustment > 0:
+            debit_account = self.receivable_account_id
+            credit_account = self.deferred_account_id
+        else:
+            debit_account = self.deferred_account_id
+            credit_account = self.receivable_account_id
+        return [
+            self._make_move_line_vals(debit_account, debit=amount, name=label, partner=partner),
+            self._make_move_line_vals(credit_account, credit=amount, name=label, partner=partner),
+        ]
+
+    def _get_exception_adjustment_move(self):
+        self.ensure_one()
+        return self.env["account.move"].search([
+            ("staff_loan_id", "=", self.id),
+            ("is_staff_loan_exception_adjustment", "=", True),
+            ("state", "!=", "cancel"),
+            ("reversal_move_ids", "=", False),
+        ], limit=1)
+
+    def _add_exception_adjustment_to_move(self, move):
+        self.ensure_one()
+        if not move or move.state != "draft" or self._get_exception_adjustment_move():
+            return self.env["account.move"]
+        line_vals = self._get_exception_adjustment_line_vals()
+        if not line_vals:
+            return self.env["account.move"]
+        move.write({
+            "is_staff_loan_exception_adjustment": True,
+            "line_ids": line_vals,
+        })
+        return move
+
+    def _ensure_exception_adjustment(self, date, journal):
+        """Fallback for loans whose final recognition entry is already posted."""
+        self.ensure_one()
+        existing_move = self._get_exception_adjustment_move()
+        if existing_move:
+            if existing_move.state == "draft":
+                existing_move.action_post()
+            return existing_move
+        line_vals = self._get_exception_adjustment_line_vals()
+        if not line_vals:
+            return self.env["account.move"]
+        move = self.env["account.move"].with_company(self.company_id).create({
+            "company_id": self.company_id.id,
+            "date": date,
+            "journal_id": journal.id,
+            "ref": _("%s - Exception Adjustment") % self.name,
+            "staff_loan_id": self.id,
+            "is_staff_loan_repayment_move": True,
+            "is_staff_loan_exception_adjustment": True,
+            "line_ids": line_vals,
+        })
+        move.action_post()
+        return move
+
     def _create_interest_recognition_moves(self):
         for loan in self:
             loan._require_accounting_settings()
@@ -862,17 +964,9 @@ class StaffLoan(models.Model):
     def _create_full_settlement_recognition_move(self, date, journal, amount, reference):
         self.ensure_one()
         partner = self.employee_id.work_contact_id or self.employee_id.user_id.partner_id
-        if float_is_zero(amount, precision_rounding=self.currency_id.rounding):
-            return self.env["account.move"]
-        move = self.env["account.move"].with_company(self.company_id).create({
-            "company_id": self.company_id.id,
-            "date": date,
-            "journal_id": journal.id,
-            "ref": _("%(loan)s - Final Interest Recognition", loan=reference or self.name),
-            "staff_loan_id": self.id,
-            "is_staff_loan_repayment_move": True,
-            "is_staff_loan_settlement_recognition": True,
-            "line_ids": [
+        line_vals = []
+        if not float_is_zero(amount, precision_rounding=self.currency_id.rounding):
+            line_vals.extend([
                 self._make_move_line_vals(
                     self.deferred_account_id,
                     debit=amount,
@@ -885,7 +979,21 @@ class StaffLoan(models.Model):
                     name=_("%s - Final Interest Income") % self.name,
                     partner=partner,
                 ),
-            ],
+            ])
+        adjustment_line_vals = [] if self._get_exception_adjustment_move() else self._get_exception_adjustment_line_vals()
+        line_vals.extend(adjustment_line_vals)
+        if not line_vals:
+            return self.env["account.move"]
+        move = self.env["account.move"].with_company(self.company_id).create({
+            "company_id": self.company_id.id,
+            "date": date,
+            "journal_id": journal.id,
+            "ref": _("%(loan)s - Final Interest Recognition", loan=reference or self.name),
+            "staff_loan_id": self.id,
+            "is_staff_loan_repayment_move": True,
+            "is_staff_loan_settlement_recognition": True,
+            "is_staff_loan_exception_adjustment": bool(adjustment_line_vals),
+            "line_ids": line_vals,
         })
         move.action_post()
         return move
