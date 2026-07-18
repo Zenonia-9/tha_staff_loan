@@ -339,6 +339,7 @@ class StaffLoanLine(models.Model):
 
     def _post_interest_recognition_on_collection(self, date, journal, reference, partner=False):
         self.ensure_one()
+        loan = self.loan_id
         recognition_move = self.generated_move_ids.filtered(
             lambda move: move.state != "cancel" and not move.reversal_move_ids
         )[:1]
