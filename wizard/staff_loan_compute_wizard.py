@@ -18,6 +18,8 @@ class StaffLoanComputeWizard(models.TransientModel):
     interest_type = fields.Selection(related="loan_id.interest_type", readonly=False)
     payment_anchor = fields.Selection(related="loan_id.payment_anchor", readonly=False)
     interest_rate = fields.Float(string="Interest Rate (%)", required=True)
+    round_up = fields.Boolean(related="loan_id.round_up", readonly=False)
+    rounding_decimal_places = fields.Integer(related="loan_id.rounding_decimal_places", readonly=False)
     preview = fields.Text(compute="_compute_preview")
 
     @api.model
@@ -34,6 +36,8 @@ class StaffLoanComputeWizard(models.TransientModel):
                 "interest_type": loan.interest_type,
                 "payment_anchor": loan.payment_anchor,
                 "interest_rate": loan.interest_rate,
+                "round_up": loan.round_up,
+                "rounding_decimal_places": loan.rounding_decimal_places,
             })
         return res
 
@@ -46,13 +50,17 @@ class StaffLoanComputeWizard(models.TransientModel):
 
     def _round_schedule(self, values, total_interest):
         self.ensure_one()
-        principal_diff = self.currency_id.round(self.loan_amount - sum(item["principal"] for item in values))
-        interest_diff = self.currency_id.round(total_interest - sum(item["interest"] for item in values))
-        values[-1]["principal"] = self.currency_id.round(values[-1]["principal"] + principal_diff)
-        values[-1]["interest"] = self.currency_id.round(values[-1]["interest"] + interest_diff)
-        values[-1]["payment"] = self.currency_id.round(values[-1]["principal"] + values[-1]["interest"])
+        principal_diff = self.loan_amount - sum(item["principal"] for item in values)
+        interest_diff = total_interest - sum(item["interest"] for item in values)
+        values[-1]["principal"] += principal_diff
+        values[-1]["interest"] += interest_diff
+        values[-1]["payment"] = values[-1]["principal"] + values[-1]["interest"]
         values[-1]["balance"] = 0.0
         return values
+
+    def _round_schedule_amount(self, amount):
+        self.ensure_one()
+        return self.loan_id._round_schedule_amount(amount)
 
     def _get_flat_schedule_values(self):
         self.ensure_one()
@@ -63,7 +71,7 @@ class StaffLoanComputeWizard(models.TransientModel):
         if self.interest_rate < 0:
             raise UserError(_("Interest rate cannot be negative."))
 
-        total_interest = self.loan_amount * self.interest_rate / 100.0
+        total_interest = self._round_schedule_amount(self.loan_amount * self.interest_rate / 100.0)
         principal_amount = self.loan_amount / self.duration
         interest_amount = total_interest / self.duration
         balance = self.loan_amount
@@ -76,10 +84,10 @@ class StaffLoanComputeWizard(models.TransientModel):
             balance -= principal
             values.append({
                 "due_date": first_due_date + relativedelta(months=index),
-                "principal": self.currency_id.round(principal),
-                "interest": self.currency_id.round(interest_amount),
-                "payment": self.currency_id.round(principal + interest_amount),
-                "balance": self.currency_id.round(max(balance, 0.0)),
+                "principal": self._round_schedule_amount(principal),
+                "interest": self._round_schedule_amount(interest_amount),
+                "payment": self._round_schedule_amount(principal + interest_amount),
+                "balance": self._round_schedule_amount(max(balance, 0.0)),
             })
         return self._round_schedule(values, total_interest)
 
@@ -111,10 +119,10 @@ class StaffLoanComputeWizard(models.TransientModel):
             balance -= principal
             values.append({
                 "due_date": first_due_date + relativedelta(months=index),
-                "principal": self.currency_id.round(principal),
-                "interest": self.currency_id.round(interest),
-                "payment": self.currency_id.round(principal + interest),
-                "balance": self.currency_id.round(max(balance, 0.0)),
+                "principal": self._round_schedule_amount(principal),
+                "interest": self._round_schedule_amount(interest),
+                "payment": self._round_schedule_amount(principal + interest),
+                "balance": self._round_schedule_amount(max(balance, 0.0)),
             })
         total_interest = sum(item["interest"] for item in values)
         return self._round_schedule(values, total_interest)
@@ -125,7 +133,7 @@ class StaffLoanComputeWizard(models.TransientModel):
             return self._get_emi_schedule_values()
         return self._get_flat_schedule_values()
 
-    @api.depends("loan_amount", "loan_date", "skip_until", "duration", "interest_rate", "interest_type", "payment_anchor")
+    @api.depends("loan_amount", "loan_date", "skip_until", "duration", "interest_rate", "interest_type", "payment_anchor", "round_up", "rounding_decimal_places")
     def _compute_preview(self):
         for wizard in self:
             if not wizard.loan_amount or not wizard.duration or not wizard.loan_date:
@@ -168,6 +176,8 @@ class StaffLoanComputeWizard(models.TransientModel):
             "interest_type": self.interest_type,
             "payment_anchor": self.payment_anchor,
             "interest_rate": self.interest_rate,
+            "round_up": self.round_up,
+            "rounding_decimal_places": self.rounding_decimal_places,
             "line_ids": [
                 Command.create({
                     "due_date": item["due_date"],

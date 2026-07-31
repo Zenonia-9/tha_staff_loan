@@ -2,7 +2,7 @@ from dateutil.relativedelta import relativedelta
 
 from odoo import api, fields, models, _, Command
 from odoo.exceptions import UserError, ValidationError
-from odoo.tools import float_compare, float_is_zero
+from odoo.tools import float_compare, float_is_zero, float_round
 from odoo.tools.misc import format_date
 
 
@@ -104,6 +104,18 @@ class StaffLoan(models.Model):
         tracking=True,
     )
     interest_rate = fields.Float(string="Interest Rate (%)", default=2.0, tracking=True)
+    round_up = fields.Boolean(
+        string="Round Up Installments",
+        default=False,
+        tracking=True,
+        help="Round calculated repayment amounts upward using the selected decimal places.",
+    )
+    rounding_decimal_places = fields.Integer(
+        string="Rounding Decimal Places",
+        default=2,
+        tracking=True,
+        help="Number of decimal places used when rounding calculated repayment amounts upward.",
+    )
     disbursement_date = fields.Date(tracking=True)
     reference = fields.Char(string="Loan Reference", tracking=True)
     notes = fields.Html()
@@ -250,7 +262,7 @@ class StaffLoan(models.Model):
                     values[field_name] = previous_loan[field_name].id
         return values
 
-    @api.constrains("loan_amount", "duration", "interest_rate")
+    @api.constrains("loan_amount", "duration", "interest_rate", "rounding_decimal_places")
     def _check_positive_values(self):
         for loan in self:
             if float_compare(loan.loan_amount, 0.0, precision_rounding=loan.currency_id.rounding) <= 0:
@@ -259,6 +271,15 @@ class StaffLoan(models.Model):
                 raise ValidationError(_("Duration must be positive."))
             if loan.interest_rate < 0:
                 raise ValidationError(_("Interest rate cannot be negative."))
+            if loan.rounding_decimal_places < 0 or loan.rounding_decimal_places > 6:
+                raise ValidationError(_("Rounding decimal places must be between 0 and 6."))
+
+    def _round_schedule_amount(self, amount):
+        """Apply this loan's optional upward rounding to generated schedule values."""
+        self.ensure_one()
+        if self.round_up:
+            return float_round(amount, precision_digits=self.rounding_decimal_places, rounding_method="UP")
+        return self.currency_id.round(amount)
 
     @api.depends(
         "line_ids.interest",
@@ -786,11 +807,11 @@ class StaffLoan(models.Model):
         self.ensure_one()
         if not values:
             return values
-        principal_diff = self.currency_id.round(principal_amount - sum(item["principal"] for item in values))
-        interest_diff = self.currency_id.round(total_interest - sum(item["interest"] for item in values))
-        values[-1]["principal"] = self.currency_id.round(values[-1]["principal"] + principal_diff)
-        values[-1]["interest"] = self.currency_id.round(values[-1]["interest"] + interest_diff)
-        values[-1]["payment"] = self.currency_id.round(values[-1]["principal"] + values[-1]["interest"])
+        principal_diff = principal_amount - sum(item["principal"] for item in values)
+        interest_diff = total_interest - sum(item["interest"] for item in values)
+        values[-1]["principal"] += principal_diff
+        values[-1]["interest"] += interest_diff
+        values[-1]["payment"] = values[-1]["principal"] + values[-1]["interest"]
         values[-1]["balance"] = 0.0
         return values
 
@@ -823,15 +844,15 @@ class StaffLoan(models.Model):
                 balance -= principal
                 values.append({
                     "due_date": due_date,
-                    "principal": self.currency_id.round(principal),
-                    "interest": self.currency_id.round(interest),
-                    "payment": self.currency_id.round(principal + interest),
-                    "balance": self.currency_id.round(max(balance, 0.0)),
+                    "principal": self._round_schedule_amount(principal),
+                    "interest": self._round_schedule_amount(interest),
+                    "payment": self._round_schedule_amount(principal + interest),
+                    "balance": self._round_schedule_amount(max(balance, 0.0)),
                 })
             total_interest = sum(item["interest"] for item in values)
             return self._round_schedule_values(values, principal_amount, total_interest)
 
-        total_interest = principal_amount * self.interest_rate / 100.0
+        total_interest = self._round_schedule_amount(principal_amount * self.interest_rate / 100.0)
         principal_per_line = principal_amount / duration
         interest_per_line = total_interest / duration
         balance = principal_amount
@@ -843,10 +864,10 @@ class StaffLoan(models.Model):
             balance -= principal
             values.append({
                 "due_date": due_date,
-                "principal": self.currency_id.round(principal),
-                "interest": self.currency_id.round(interest_per_line),
-                "payment": self.currency_id.round(principal + interest_per_line),
-                "balance": self.currency_id.round(max(balance, 0.0)),
+                "principal": self._round_schedule_amount(principal),
+                "interest": self._round_schedule_amount(interest_per_line),
+                "payment": self._round_schedule_amount(principal + interest_per_line),
+                "balance": self._round_schedule_amount(max(balance, 0.0)),
             })
         return self._round_schedule_values(values, principal_amount, total_interest)
 

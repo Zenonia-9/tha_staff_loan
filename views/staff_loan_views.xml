@@ -165,6 +165,11 @@
                                     <field name="deferred_account_id" readonly="state not in ('draft', 'approved')" options="{'no_open': True}"/>
                                 </group>
                                 <group>
+                                    <separator string="Rounding"/>
+                                    <field name="round_up" readonly="state != 'draft'"/>
+                                    <field name="rounding_decimal_places" readonly="state != 'draft'" invisible="not round_up"/>
+                                </group>
+                                <group>
                                     <field name="disbursement_journal_id" readonly="state not in ('draft', 'approved')"/>
                                     <field name="disbursement_move_id"/>
                                     <field name="skip_until" readonly="state != 'draft'" help="Leave empty to use the loan date month for the first payment date. Set a later date to postpone the first payment month."/>
