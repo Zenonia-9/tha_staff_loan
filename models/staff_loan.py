@@ -152,7 +152,7 @@ class StaffLoan(models.Model):
         "account.account",
         string="Deferred Account",
         tracking=True,
-        domain="[('account_type', 'in', ('income', 'income_other')), ('company_ids', 'in', company_id)]",
+        domain="[('account_type', 'in', ('income', 'income_other', 'liability_current')), ('company_ids', 'in', company_id)]",
     )
 
     line_ids = fields.One2many("staff.loan.line", "loan_id", string="Repayment Schedule", copy=True)
