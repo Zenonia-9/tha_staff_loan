@@ -1,4 +1,30 @@
 <odoo>
+    <record id="res_group_privilege_staff_loan" model="res.groups.privilege">
+        <field name="name">Staff Loan</field>
+        <field name="sequence">53</field>
+        <field name="category_id" ref="base.module_category_accounting"/>
+    </record>
+
+    <!-- Every internal user can review staff loans unless a higher level is selected. -->
+    <record id="group_staff_loan_readonly" model="res.groups">
+        <field name="name">Readonly</field>
+        <field name="privilege_id" ref="res_group_privilege_staff_loan"/>
+        <field name="implied_by_ids" eval="[Command.link(ref('base.group_user'))]"/>
+    </record>
+
+    <record id="group_staff_loan_user" model="res.groups">
+        <field name="name">User</field>
+        <field name="privilege_id" ref="res_group_privilege_staff_loan"/>
+        <field name="implied_ids" eval="[Command.link(ref('group_staff_loan_readonly'))]"/>
+        <field name="implied_by_ids" eval="[Command.link(ref('base.group_system'))]"/>
+    </record>
+
+    <record id="group_staff_loan_administrator" model="res.groups">
+        <field name="name">Administrator</field>
+        <field name="privilege_id" ref="res_group_privilege_staff_loan"/>
+        <field name="implied_ids" eval="[Command.link(ref('group_staff_loan_user'))]"/>
+    </record>
+
     <record id="staff_loan_company_rule" model="ir.rule">
         <field name="name">Staff Loan: company rule</field>
         <field name="model_id" ref="model_staff_loan"/>

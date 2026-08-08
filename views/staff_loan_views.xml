@@ -93,16 +93,16 @@
         <field name="arch" type="xml">
             <form string="Staff Loan">
                 <header>
-                    <button name="action_reset" string="Reset" type="object" class="btn-secondary" invisible="state != 'draft' or not line_ids" groups="base.group_system"/>
+                    <button name="action_reset" string="Reset" type="object" class="btn-secondary" invisible="state != 'draft' or not line_ids" groups="tha_staff_loan.group_staff_loan_user"/>
                     <button name="action_approve_wizard" string="Approve" type="object" class="btn-primary" invisible="state != 'draft'"/>
                     <button name="action_disburse_wizard" string="Disburse" type="object" class="btn-primary" invisible="state != 'approved'"/>
                     <button name="action_update_exception_schedule" string="Update Schedule" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed') or not exception_update_pending"/>
                     <button name="action_full_settlement_wizard" string="Full Settlement" type="object" class="btn-secondary" invisible="state not in ('running', 'disbursed') or outstanding_balance == 0"/>
                     <button name="action_compute_schedule" string="Compute" type="object" class="btn-secondary" invisible="state != 'draft' or line_ids"/>
                     <button name="action_close_wizard" string="Close" type="object" class="btn-secondary" invisible="state != 'running'"/>
-                    <button name="action_cancel" string="Cancel" type="object" class="btn-secondary" invisible="state != 'running'" groups="base.group_system"/>
-                    <button name="action_cancel_wizard" string="Cancel" type="object" class="btn-secondary" invisible="state not in ('draft', 'approved')" groups="base.group_system"/>
-                    <button name="action_set_to_draft" string="Set to Draft" type="object" class="btn-secondary" invisible="state != 'cancelled'" groups="base.group_system"/>
+                    <button name="action_cancel" string="Cancel" type="object" class="btn-secondary" invisible="state != 'running'" groups="tha_staff_loan.group_staff_loan_user"/>
+                    <button name="action_cancel_wizard" string="Cancel" type="object" class="btn-secondary" invisible="state not in ('draft', 'approved')" groups="tha_staff_loan.group_staff_loan_user"/>
+                    <button name="action_set_to_draft" string="Set to Draft" type="object" class="btn-secondary" invisible="state != 'cancelled'" groups="tha_staff_loan.group_staff_loan_user"/>
                     <field name="state" widget="statusbar" statusbar_visible="draft,approved,disbursed,running,closed,cancelled"/>
                 </header>
                 <sheet>
@@ -214,8 +214,8 @@
         <field name="view_mode">list,form</field>
     </record>
 
-    <menuitem id="menu_staff_loan_root" name="Staff Loans" parent="accountant.account_assets_liabilities_menu" action="action_staff_loan" sequence="63" groups="account.group_account_readonly"/>
-    <menuitem id="menu_staff_loan" name="Staff Loans" parent="menu_staff_loan_root" action="action_staff_loan" sequence="10" groups="account.group_account_readonly"/>
+    <menuitem id="menu_staff_loan_root" name="Staff Loans" parent="accountant.account_assets_liabilities_menu" action="action_staff_loan" sequence="63" groups="tha_staff_loan.group_staff_loan_readonly"/>
+    <menuitem id="menu_staff_loan" name="Staff Loans" parent="menu_staff_loan_root" action="action_staff_loan" sequence="10" groups="tha_staff_loan.group_staff_loan_readonly"/>
     <menuitem id="menu_staff_loan_lines" name="Installments" parent="menu_staff_loan_root" action="action_staff_loan_line" sequence="20" groups="base.group_no_one"/>
     <record id="menu_staff_loan" model="ir.ui.menu">
         <field name="active" eval="False"/>
