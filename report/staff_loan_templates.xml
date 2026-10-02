@@ -123,4 +123,56 @@
             <t t-call="tha_staff_loan.staff_loan_report_base"/>
         </t>
     </template>
+
+    <template id="report_staff_loan_outstanding_summary">
+        <t t-call="web.html_container">
+            <t t-set="outstanding_loans" t-value="docs.filtered(lambda loan: loan.state in ('approved', 'disbursed', 'running') and loan.outstanding_balance > 0)"/>
+            <t t-call="web.external_layout">
+                <div class="page">
+                    <h2>Outstanding Staff Loans</h2>
+                    <p>Loans with an amount remaining to be paid.</p>
+                    <t t-if="outstanding_loans">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Loan No.</th>
+                                    <th>Staff</th>
+                                    <th>Department</th>
+                                    <th>Loan Date</th>
+                                    <th class="text-end">Loan Amount</th>
+                                    <th class="text-end">Total Payment</th>
+                                    <th class="text-end">Paid</th>
+                                    <th class="text-end">Remaining</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="outstanding_loans" t-as="loan">
+                                    <td><span t-field="loan.name"/></td>
+                                    <td><span t-field="loan.employee_id"/></td>
+                                    <td><span t-field="loan.department_id"/></td>
+                                    <td><span t-field="loan.loan_date"/></td>
+                                    <td class="text-end"><span t-field="loan.loan_amount"/></td>
+                                    <td class="text-end"><span t-field="loan.total_payment"/></td>
+                                    <td class="text-end"><span t-field="loan.paid_amount"/></td>
+                                    <td class="text-end"><span t-field="loan.outstanding_balance"/></td>
+                                </tr>
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th colspan="4">Total</th>
+                                    <th class="text-end"><span t-out="sum(outstanding_loans.mapped('loan_amount'))" t-options="{'widget': 'monetary', 'display_currency': outstanding_loans[0].currency_id}"/></th>
+                                    <th class="text-end"><span t-out="sum(outstanding_loans.mapped('total_payment'))" t-options="{'widget': 'monetary', 'display_currency': outstanding_loans[0].currency_id}"/></th>
+                                    <th class="text-end"><span t-out="sum(outstanding_loans.mapped('paid_amount'))" t-options="{'widget': 'monetary', 'display_currency': outstanding_loans[0].currency_id}"/></th>
+                                    <th class="text-end"><span t-out="sum(outstanding_loans.mapped('outstanding_balance'))" t-options="{'widget': 'monetary', 'display_currency': outstanding_loans[0].currency_id}"/></th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </t>
+                    <t t-else="">
+                        <p>No outstanding staff loans found in the selected records.</p>
+                    </t>
+                </div>
+            </t>
+        </t>
+    </template>
 </odoo>
